@@ -1,0 +1,1432 @@
+<?php
+/*
+Plugin Name: CF Advanced Search
+Plugin URI: http://crowdfavorite.com
+Description: NOT FIT FOR PUBLICATION. Advanced search functionality greater than the built in wordpress search
+Version: 1.0
+Author: Crowd Favorite
+Author URI: http://crowdfavorite.com
+*/
+
+/*
+@TODO - extract multiple author data in to separate plugin
+	- pull action functions
+	- pull assistive functions
+	
+@TODO - remove individual site from global index on deactivate?
+@TODO - be sure to trim filter inputs
+@TODO - apply filter to page-title on search results
+		to populate the entire search query in link
+@TODO - pre-build category link lists when building post data
+		during switch_to_blog
+@TODO - move to plugin libary once it has been abstracted enough
+*/
+
+	//error_reporting(E_ALL ^ E_NOTICE);
+	//ini_set('display_errors', 1); 
+
+// CONSTANTS & GLOBALS
+	
+	/**
+	 * Development Version
+	 */
+	define('CFS_SEARCH_VERSION',1.0);
+	
+	
+// ACTIVATION
+
+	load_plugin_textdomain('agora-financial');
+	cfs_assign_actions();
+	
+	// be explicit about the path to handle symlinking
+	register_activation_hook(WP_CONTENT_DIR.'/plugins/cf-advanced-search/'.basename(__FILE__), 'cfs_activate');
+	function cfs_activate() {
+		register_shutdown_function('cfs_initialize_database');
+	}
+
+	function cfs_assign_actions() {
+		// init handler
+		add_action('init','cfs_init_handler');
+
+		// admin page actions
+		if (is_admin()) {
+			// indexing actions
+			add_action('deleted_post', 'cfs_deleted_post');
+			add_action('save_post', 'cfs_save_post', 10000, 2);
+			add_action('transition_post_status', 'cfs_transition_post_status', null, 3);
+		
+			// post editor modifications - most of this will move in to a multiple-authors plugin
+				add_action('admin_head-post-new.php', 'cfs_post_ui');
+				add_action('admin_head-post.php', 'cfs_post_ui');
+				add_action('admin_head-post-new.php', 'cfs_post_header_scripts');
+				add_action('admin_head-post.php', 'cfs_post_header_scripts');
+				add_action('save_post', 'cfs_store_custom_metafields', 9999, 1);
+
+			// rebuild index page functions
+			add_action('admin_menu','cfs_admin_menu_item');
+			if (isset($_GET['page']) && $_GET['page'] == 'advanced-search-admin') {
+				add_action('admin_head','cfs_admin_css');
+				wp_enqueue_script('cfs-search-admin-js',get_bloginfo('wpurl').'/index.php?cfs-search-admin-js=1',array('jquery'),CFS_SEARCH_VERSION);
+			}
+		}
+		
+		// modify the sql query in the wp-query object
+		add_action('posts_request','cfs_posts_request_action');
+		// modify the posts as they're returned from the wp-query posts query
+		add_action('the_posts','cfs_posts_results_action'); 
+		
+		// modify the post url if blog_id is found on the post object
+		add_action('post_link','cfs_posts_permalink_action',10,2);
+		// modify the author link if blog_id is found on the post object
+		add_action('author_link','cfs_author_link_action',10,3);
+		// help out the query parsing to ensure our search is performed 
+		add_action('request','cfs_parse_query');		
+	}
+
+// INIT
+
+	/**
+	 * init handler
+	 */
+	function cfs_init_handler() {
+		/**
+		 * true to allow global search
+		 * ie: for parent MU blog to search child blogs
+		 */
+		define('CFS_GLOBAL_SEARCH',apply_filters('cfs_do_global_search',false));
+
+		// deliver JS
+		if (isset($_GET['cfs-search-admin-js'])) { // deliver admin js
+			cfs_admin_js();
+			exit();
+		}
+	
+		if (function_exists('is_admin_page') && is_admin_page()) {
+			// rebuild database indexes
+			if (isset($_POST['cfs_rebuild_indexes']) && isset($_POST['cfs_batch_offset'])) {
+				cfs_batch_reindex();
+				exit();
+			}
+			else if (isset($_POST['cfs_rebuild_indexes']) && isset($_POST['cfs_create_table_index'])) {
+				cfs_build_batch_index();
+				exit();
+			}
+		}
+	}
+
+// SEARCH FILTERS
+	
+	/**
+	 * Rewrite the WP_Query query on is_search() == true
+	 * @param string $post_query - the default wordpress search query
+	 * @return string - a modified query to do an advanced search on our indexed data
+	 */
+	function cfs_posts_request_action($post_query) {
+		global $wp_the_query,$search;
+		if (is_search() && isset($wp_the_query->query_vars['advanced-search']) && $wp_the_query->query_vars['advanced-search'] == 1) {
+			$options = cfs_search_params();			
+			$post_query = cfs_execute_search($options,true);
+		}
+		return $post_query;
+	}
+
+	/**
+	 * Attatch the blog name and general permalink to the post for easy retrieval
+	 * @TODO - the meat of this function
+	 * @uses wp_cache_get & wp_cache_add to store values to avoid repetition
+	 * @param array $posts - array of posts from the query object
+	 * @return array - possibly modified array of posts
+	 */
+	function cfs_posts_results_action($posts) {
+		global $wp_the_query,$search;
+		if (isset($wp_the_query->query_vars['advanced-search']) && $wp_the_query->query_vars['advanced-search'] == 1) {
+			if (cfs_param('cfs_global_search') == '1') {
+				foreach($posts as $key => $post) {
+					$deets = get_blog_details($post->blog_id);
+					$posts[$key]->siteurl = $deets->siteurl;
+					$posts[$key]->blogname = $deets->blogname;
+				}
+			}
+			// unset the advanced-search var on the query object so that these filters aren't running again
+			unset($wp_the_query->query_vars['advanced-search']);
+		}
+		return $posts;
+	}
+	
+	
+// TEMPLATE FILTERS FOR GLOBAL SEARCH
+	
+	/**
+	 * If a blog id is found on the post then use it to pull an author url to that blog
+	 *
+	 * @uses wp_cache_get & wp_cache_add to store values to avoid repetition
+	 * 		- I don't know if the object cache functions correctly on switch_to_blog so I handled this manually
+	 * @param string $link - the author link generated by wordpress' default functionality
+	 * @param int $author_id - the id of the author
+	 * @param string $author_nicename - the nicename of the author
+	 * @param string - url to the author's profile on the relevant blog for this post
+	 */
+	function cfs_author_link_action($link, $author_id, $author_nicename) {
+		global $post;
+		if (is_search() && isset($post->blog_id) && !isset($post->global_author_url)) {
+			$post->global_author_url = '';
+			$key = $post->blog_id.'-'.$post->post_author.'-author_link';
+			$link = wp_cache_get($key,'global-authors-urls');
+			if ($link == false) {
+				switch_to_blog($post->blog_id);
+				$link = get_author_posts_url($post->post_author);
+				restore_current_blog();
+				wp_cache_add($key,$link,'global-authors-urls',30);
+			}
+			$post->global_author_url = $link;
+		}
+		return $link;
+	}
+	
+	/**
+	 * If a blog_id is found on the post then use it to make a permalink for the post to that blog
+	 *
+	 * @uses wp_cache_get & wp_cache_add to store values to avoid repetition
+	 * 		- I don't know if the object cache functions correctly on switch_to_blog so I handled this manually
+	 * @param string $permalink - the permalink generated by wordpress' default functionality
+	 * @param object $post - the current active post
+	 * @return string - link to the post on its relevant blog
+	 */
+	function cfs_posts_permalink_action($permalink,$post) {
+		if (is_search() && isset($post->blog_id) && !isset($post->post_global_permalink)) {
+			$post->post_global_permalink = '';
+			$key = $post->blog_id.'-'.$post->ID.'-permalink';
+			$permalink = wp_cache_get($key,'global-post-permalinks');
+			if ($permalink == false) {
+				$permalink = get_blog_permalink($post->blog_id,$post->ID);
+				wp_cache_add($key,$permalink,'global-post-permalinks');
+			}
+			$post->post_global_permalink = $permalink;
+		}
+		return $permalink;
+	}
+	
+
+// ACTIONS	
+
+	/**
+	 * styles needed for index building status messages
+	 */
+	function cfs_admin_css() {
+		echo '
+			<style type="text/css">
+				<!--
+					/* Added by CF Advanced Search for admin styling */
+					div.updated.finished { border-color: green; background-color: #E7FFDB; }
+					div.updated.error { border-color: red; background-color: #FDEAC9; }
+				-->
+			</style>
+		';
+	}
+
+	/**
+	 * control activation of search in the event of an empty search var
+	 * Search needs SOMETHING to trigger it, so if s is empty then give it at minimum an empty string
+	 */
+	function cfs_parse_query($query_vars) {
+		if (isset($_GET['s'])) {
+			if (empty($_GET['s'])) {
+				$params = cfs_search_params();
+				$query_vars['s'] = ' ';
+			}
+			$query_vars['advanced-search'] = 1;
+		}
+		return $query_vars;
+	}
+
+	// actions requested through GET vars
+	function cfs_request_handler() {
+		if ($action = cfs_param('cfs_action')) {
+			$fn = "cfs_request_$action";
+			if (function_exists($fn)) {
+				call_user_func($fn);
+			} 
+			else {
+				dbg('Missing action', $action);
+			}
+		}
+	}
+
+	// remove from index
+	function cfs_deleted_post($postid) {
+		cfs_deindex_post($postid);
+	}
+
+	// add/replace in index
+	function cfs_save_post($post_id, $post) {
+		cfs_index_post($post);
+	}
+	
+	// we may want to add to the index when we transition to "published"
+	// and remove otherwise
+	function cfs_transition_post_status($new_status, $old_status, $post) {
+		dbg('cfs_transition_post_status', $new_status);
+		if ($new_status == 'publish') {
+			cfs_index_post($post);
+		} 
+		else {
+			cfs_deindex_post($post->ID);
+		}
+	}
+
+	
+// MULTIPLE AUTHORS
+
+	/**
+	 * Add multiple authors post-meta box
+	 */
+	function cfs_post_ui() {
+		// author management
+		add_meta_box('cfs_post_multiple_authors', __('Multiple Authors'), 'cfs_post_authors_ui', 'post', 'normal', 'low');
+	}
+	
+	/**
+	 * Styles and Javascript needed for picking multiple authors
+	 */
+	function cfs_post_header_scripts() {
+		echo '
+			<style type="text/css">
+				<!--
+					/* Added by CF Advanced Search to style the multi-author select area */
+					/* copied from category picker because it was all hardcoded to an ID instead of classed */
+					#cfs_post_multiple_authors ul {
+						list-style-image:none;
+						list-style-position:outside;
+						list-style-type:none;
+						margin:0;
+						padding:0;
+					}
+					#cfs_post_multiple_authors ul#cfs_multiple_authors_tabs {
+						float:left;
+						margin:0 -120px 0 0;
+						padding:0;
+						text-align:right;
+						width:120px;
+					}
+					ul#cfs_multiple_authors_tabs li {
+						padding:8px;
+					}
+					ul#cfs_multiple_authors_tabs li.ui-tabs-selected {
+						background-color:#CEE1EF !important;
+						-moz-border-radius-bottomleft:3px;
+						-moz-border-radius-topleft:3px;
+						-webkit-border-bottom-left-radius: 3px;
+						-webkit-border-top-left-radius: 3px;
+					}
+					ul#cfs_multiple_authors_tabs li.ui-tabs-selected a:link {
+						color:#333333;
+						font-weight:bold;
+						text-decoration:none;
+					}
+		
+				-->
+			</style>
+			<script type="text/javascript">
+				// <![CDATA[
+					// Added by CF Advanced Search to init the multi-author select area
+					jQuery(function() {
+						var multipleAuthorTabs = jQuery("#hn_multiple_authors_tabs").tabs();
+					});
+				// ]]>
+			</script>
+		';
+	}
+	
+	function cfs_post_authors_ui() {
+		global $post;
+		
+		// get currently assigned authors
+		// returns array of usernames
+		$selected_authors = get_post_meta($post->ID,'cfs_authors',false);
+		if (!is_array($selected_authors)) { $selected_authors = array(); }
+		dbg('selected authors',$selected_authors);
+		
+		// get full author list
+		// returns array of usernames
+		$all_authors = cfs_get_authors(true);
+		dbg('all authors',$all_authors);
+		$all_authors = cf_sort_by_key($all_authors,'user_nicename');
+		
+		// build output
+		$html = '
+				<p>Select the authors to assign to this post.</p>
+				<ul id="cfs_multiple_authors_tabs" class="ui-tabs-nav">
+					<li class="ui-tabs-selected"><a href="#cfs_multiple_authors_list">Authors</a></li>
+				</ul>
+				<div id="cfs_multiple_authors_list" class="ui-tabs-panel" style="display: block;">
+					<ul>
+				';
+		foreach($all_authors as $author_id => $author) {
+			$html .= '<li>
+					<label for="cfs_multiple_authors_'.$author->user_nicename.'">'.
+					'<input type="checkbox" id="cfs_multiple_authors_'.$author->user_nicename.'" name="cfs_multiple_authors[]" value="'.$author->user_nicename.'"'.
+					(in_array($author->user_nicename,$selected_authors) ? ' checked="checked"' : null).
+					'> '.
+					$author->display_name.
+					'</label>'.
+					'</li>'.PHP_EOL;
+		}
+		$html .= '
+					</ul>
+				</div>
+				';
+		
+		// output
+		echo $html;
+	}
+	
+	function cfs_store_custom_metafields($post_id) {
+		dbg('cfs_store_custom_metafields', $post_id);
+		
+		// can have multiple authors per document
+		// delete exisitng authors, then insert newly selected ones
+		$selected_authors = cfs_param('cfs_multiple_authors', array());
+		dbg('selected_authors', $selected_authors);
+
+		delete_post_meta($post_id, 'cfs_authors');
+		foreach($selected_authors as $a) {
+			add_post_meta($post_id, 'cfs_authors', $a, false);
+		}
+		
+	}
+
+	
+// ADMIN PAGE
+
+	/**
+	 * Admin page wrapper
+	 */
+	function cfs_admin() {
+		echo '
+				<div class="wrap cfs_wrap">
+					<h2>Advanced Search Admin</h2>
+			';
+		cfs_rebuild_index_form();
+		echo '
+				</div>
+			';
+	}
+	
+	/**
+	 * Rebuild Indexes form
+	 */
+	function cfs_rebuild_index_form() {
+		global $wpdb;
+		$status = cfs_index_table_status();
+		echo '
+				<h3>Search Index</h3>
+			';
+		if(CFS_GLOBAL_SEARCH) {
+			echo '<p>Global Search is enabled. This blog will be searchable via the global search index.</p>';
+		}
+		echo '
+				<div id="cfs-index-info">
+					<ul class="index-info">
+						<li><strong>Last Full Index:</strong> <span id="cfs_create_time">'.$status->Create_time.'</span></li>
+						<li><strong>Last Update (post insert):</strong> <span id="cfs_update_time">'.$status->Update_time.'</span></li>
+						<li><strong>Indexed Posts:</strong> <span id="cfs_num_rows">'.$status->Rows.'</span></li>
+					</ul>
+				</div>
+				<h3>Rebuild Search Index</h3>
+				<p>Rebuild indexes. This can take a while with large numbers of posts.</p>
+				<div id="index-status"><p id="index-status-update"></p></div>
+				<form id="cfs_rebuild_indexes_form" method="post" action="" onsubmit="return false;">
+					<p class="submit"><input type="submit" name="cfs_rebuild_indexes" value="Rebuild Index"></p>
+				</form>
+			';
+	}
+	
+	/**
+	 * Get some stats on the index table
+	 */
+	function cfs_index_table_status() {
+		global $wpdb;
+		$index_table = cfs_get_index_table();
+		return $wpdb->get_row("SHOW TABLE STATUS LIKE '{$index_table}'");
+	}
+	
+	/**
+	 * Admin page javascript 
+	 */
+	function cfs_admin_js() {
+		header('Content-type: text/javascript');
+		?>
+jQuery(function() {
+
+	jQuery('#cfs_rebuild_indexes_form input[type="submit"]').click(function(){
+		cfs_batch_rebuild_indexes();
+		return false;
+	});
+	
+	function cfs_batch_rebuild_indexes() {
+		var batch_increment = 100;
+		cfs_fade_info_display(.3);
+		cfs_update_status('Processing posts');
+		cfs_rebuild_batch(0,batch_increment);
+	}
+	
+	// recursive function to rebuild the post index in batches
+	function cfs_rebuild_batch(offset,increment) {
+		jQuery.post('index.php',{'cfs_rebuild_indexes':1,'cfs_batch_offset':offset,'cfs_batch_increment':increment},function(r){
+				if (!r.result && !r.finished) {
+					if (r.message) { 
+						msg = r.message;
+					}
+					else {
+						msg = 'Fatal Error. Please contact the system administrator.';
+					}
+
+					cfs_update_status('<b>Post processing failed!</b> Server said: ' + msg);
+					return;
+				}
+				else if (!r.result && r.finished) {
+					cfs_update_status('Creating indexes. Almost done&hellip;');
+					setTimeout(cfs_rebuild_indexes,500); // slight pause for effect
+				}
+				else if (r.result) {
+					cfs_update_status(r.message);
+					cfs_rebuild_batch(offset+increment,increment);
+				}
+			},'json');
+	}
+	
+	// make a call to rebuild the fulltext indexes on the search tables
+	function cfs_rebuild_indexes() {
+		// make call to build table index
+		jQuery.post('index.php',{cfs_rebuild_indexes:'1',cfs_create_table_index:'1'},function(response) {
+				if (response.result) {
+					jQuery('#cfs_create_time').html(response.create_time);
+					jQuery('#cfs_update_time').html(response.update_time);
+					jQuery('#cfs_num_rows').html(response.num_rows);
+					cfs_update_status('Post Indexing Complete.',true);
+					cfs_fade_info_display(1);
+				}
+				else {
+					cfs_update_status('Failed creating post table index');
+				}
+			},'json');		
+	}
+	
+	// update status message
+	function cfs_update_status(message,finished) {
+		if (finished) {
+			jQuery('#index-status').addClass('finished').children('#index-status-warning').remove();
+		}
+		else {
+			jQuery('#index-status.finished').removeClass('finished');
+			jQuery('#index-status:not(.updated)').addClass('updated').append('<p id="index-status-warning">Do not leave or refresh this page</p>');
+		}
+		jQuery('#index-status p#index-status-update').html(message);
+	}
+	
+	// change the opacity of the info display
+	function cfs_fade_info_display(amount) {
+		jQuery('#cfs-index-info').fadeTo(1000,amount);
+	}
+	
+});
+		
+		<?php
+	}
+	
+	/**
+	 * Add admin menu item only for administrators
+	 * Run at admin_menu action
+	 */
+	function cfs_admin_menu_item() {
+		add_submenu_page('options-general.php','Advanced Search','Advanced Search',10,'advanced-search-admin','cfs_admin');
+	}
+	
+	/**
+	 * Batch reindexing function, called via ajax
+	 * On first call will destroy and rebuild the index table
+	 * Then indexes posts based on increments passed in via ajax
+	 */
+	function cfs_batch_reindex() {
+		global $wpdb;
+		if (!is_numeric($_POST['cfs_batch_increment']) || !is_numeric($_POST['cfs_batch_offset'])) {
+			echo json_encode(array('result' => false,'message' => 'invalid quantity or offset'));
+			exit();
+		}
+		$qty = (int) $_POST['cfs_batch_increment'];
+		$offset = (int) $_POST['cfs_batch_offset'];
+		
+		// first run, rebuild db table
+		if ($offset === 0) {
+			cfs_destroy_index_table();
+			cfs_create_index_table();
+			cfs_destroy_global_indices();
+			cfs_clear_from_global_index_table();
+		}
+
+		$r = cfs_index_batch_posts($qty,$offset);
+		if ($r == true) { // success
+			$result = true;
+			$finished = false;
+			$message = 'Processing posts';
+			for($i = 0; $i < ($offset/100); $i++) {
+				$message .= ' . ';
+			}
+		}
+		else if ($r == false) { // nothing to process
+			$result = false;
+			$finished = true;
+			$message = 'no posts to process in offset range';
+		}
+		else { // processing error
+			$result = false;
+			$finished = false;
+			$message = $r;
+		}
+		$message = $message;
+		echo cf_json_encode(array('result' => $result,'finished' => $finished,'message' => $message));
+		exit();
+	}
+	
+	/**
+	 * If we're doing global searches then remove this tables entries from the global index table
+	 */
+	function cfs_clear_from_global_index_table() {
+		if (!cfs_do_global_index()) { return; }
+		
+		global $wpdb;
+		$global_index_table = cfs_get_global_index_table();
+		return $wpdb->query("delete LOW_PRIORITY from {$global_index_table} where blog_id = {$wpdb->blogid}");
+	}
+	
+	/**
+	 * Rebuilds the index table for this blog
+	 * Called at the end of the Ajax batch index routine so
+	 * that indexing posts is separated from table index creation
+	 */
+	function cfs_build_batch_index() {
+		cfs_create_indices();
+		
+		// rebuild global indices
+		if (cfs_do_global_index()) { 
+			//cfs_destroy_global_indices();
+			cfs_create_global_indices();		
+		}
+		
+		// check for errors...
+		
+		$status = cfs_index_table_status();
+		$result = true;
+		$message = '';
+		echo cf_json_encode(array('result' => $result,
+							   'message' => $message,
+							   'create_time' => $status->Create_time,
+							   'update_time' => $status->Update_time,
+							   'num_rows' => $status->Rows));
+		exit();
+	}
+	
+// TABLE AND INDEX MANIPULATION
+
+	/**
+	 * handle database initialization
+	 * build blog specific table, don't populate it
+	 * check to see if global table should be built and build if necessary
+	 */
+	function cfs_initialize_database() {
+		// handle this blog
+		cfs_create_index_table();
+		//cfs_destroy_indices();
+		cfs_create_indices();
+		
+		// handle global search table
+		cfs_create_global_index_table();
+		//cfs_destroy_global_indices();
+		cfs_create_global_indices();
+	}
+	
+	function cfs_index_batch_posts($qty=100,$offset=0) {
+		global $wpdb;
+		set_time_limit(10 * 60);
+		$posts =& cfs_get_posts($qty,$offset);
+		// no posts to process in offset range, return false
+		if (!count($posts)) { return false; }
+		$posts_pulled = count($posts);
+		dbg('post count', count($posts));
+		foreach($posts as &$post) {
+			cfs_index_post($post);
+			if ($wpdb->last_error != '') { return $wpdb->last_error; }
+		}
+		return true;
+	}
+	
+	// deprecated? only called from cfs_index_all_posts which is way too long a function to call
+	function cfs_flush_index_table() {
+		global $wpdb;
+		$index_table = cfs_get_index_table();
+		$sql = "delete from {$index_table}";
+		$wpdb->query($sql);
+	}
+	
+	// badly named...
+	function &cfs_get_posts($qty=false,$offset=false) {
+		global $wpdb;
+		$index_table = cfs_get_index_table();
+		$sql = "select * from {$wpdb->posts} where post_status = 'publish' and post_parent = 0 and post_type = 'post'";
+		if ($qty !== false && $offset !== false) {
+			$sql .= " LIMIT {$offset}, {$qty}";
+		}
+		return $wpdb->get_results($sql);
+	}
+	
+	/**
+	 * Create the global index table
+	 * Only called on plugin activation
+	 * In the interest of query speed this table is significantly different than the per-blog index table
+	 * We store complete post data in this index so that the pull includes everything we need without any
+	 * queries to get complete post and blog information
+	 */
+	function cfs_create_global_index_table() {
+		// no global table needed if not mu or not searching multiple blogs
+		if (!cfs_do_global_index()) { return; }
+		
+		global $wpdb;
+		$index_table = cfs_get_global_index_table();
+		
+		$sql = "
+			CREATE TABLE if not exists {$index_table} (
+				`post_id` bigint unsigned not null,
+				`post_available` timestamp,
+				`title` text,
+				`excerpt` text,
+				`content` longtext,
+				`categories` varchar(255),
+				`tags` varchar(255),
+				`author` varchar(255),
+				`blog_id` bigint unsigned not null, 
+				`post_author` bigint(20) NOT NULL default '0',
+				`post_date` datetime NOT NULL default '0000-00-00 00:00:00',
+				`post_date_gmt` datetime NOT NULL default '0000-00-00 00:00:00',
+				`post_content` longtext NOT NULL,
+				`post_title` text NOT NULL,
+				`post_category` int(4) NOT NULL default '0',
+				`post_excerpt` text NOT NULL,
+				`post_password` varchar(20) NOT NULL default '',
+				`post_name` varchar(200) NOT NULL default '',
+				`post_modified` datetime NOT NULL default '0000-00-00 00:00:00',
+				`post_modified_gmt` datetime NOT NULL default '0000-00-00 00:00:00',
+				`post_content_filtered` text NOT NULL,
+				`post_parent` bigint(20) NOT NULL default '0',
+				`guid` varchar(255) NOT NULL default '',
+				`post_type` varchar(20) NOT NULL default 'post',
+				PRIMARY KEY (`post_id`,`blog_id`),
+				KEY `blog_id` (`blog_id`)
+			) ENGINE=MyISAM;
+		";
+		return $wpdb->query($sql);
+	}
+	
+	// create a single blog index table for this blog
+	function cfs_create_index_table() {
+		global $wpdb;
+		$index_table = cfs_get_index_table();
+
+		$sql = "
+			CREATE TABLE if not exists {$index_table} (
+				`post_id` bigint unsigned not null,
+				`post_available` timestamp,
+				`categories` varchar(255),
+				`tags` varchar(255),
+				`title` text,
+				`excerpt` text,
+				`content` longtext,
+				`author` varchar(255),
+				PRIMARY KEY (`post_id`)
+			) ENGINE=MyISAM;
+		";
+		$res = $wpdb->query($sql);
+		error_log('MySQL Returned: '.$res);
+		return $res;
+	}
+
+	/**
+	 * Destroy fulltext indices on a table
+	 * @param bool $global - toggle to operate on global table
+	 */	
+	function cfs_create_indices($global=false) {
+		global $wpdb;
+		$index_table = ($global ? cfs_get_global_index_table() : cfs_get_index_table());
+		$statements = array(
+			"alter table {$index_table} add fulltext `ft_categories` (categories);",
+			"alter table {$index_table} add fulltext `ft_tags` (tags);",
+			"alter table {$index_table} add fulltext `ft_title` (title);",
+			"alter table {$index_table} add fulltext `ft_content` (excerpt,content);",
+			"alter table {$index_table} add fulltext `ft_author` (author);"
+		);
+		foreach($statements as $sql) {
+			$wpdb->query($sql);
+		}
+	}
+	
+	/**
+	 * stub function to create global indices
+	 */
+	function cfs_create_global_indices() {
+		if (!cfs_do_global_index()) { return; }
+		return cfs_create_indices(true);
+	}
+	
+	/**
+	 * Create fulltext indices on a table
+	 * @param bool $global - toggle to operate on global table
+	 */
+	function cfs_destroy_indices($global=false) {
+		global $wpdb;
+		$index_table = ($global ? cfs_get_global_index_table() : cfs_get_index_table());
+		$statements = array(
+			"alter table {$index_table} drop index `ft_tags`;",
+			"alter table {$index_table} drop index `ft_categories`;",
+			"alter table {$index_table} drop index `ft_title`;",
+			"alter table {$index_table} drop index `ft_content`;",
+			"alter table {$index_table} drop index `ft_author`;"
+		);
+		foreach($statements as $sql) {
+			$wpdb->query($sql);
+		}
+	}
+	
+	/**
+	 * stub function to destroy global indices
+	 */
+	function cfs_destroy_global_indices() {
+		if (!cfs_do_global_index()) { return; }
+		return cfs_destroy_indices(true);
+	}
+	
+	/**
+	 * Drop the index table
+	 */
+	function cfs_destroy_index_table() {
+		global $wpdb;
+		$index_table = cfs_get_index_table();
+		$sql = "drop table if exists {$index_table}";
+		$wpdb->query($sql);
+	}
+	
+	
+	
+	
+// SEARCH & INDEXING
+	
+	/**
+	 * this might be variable under WordPress MU because I will probably need to make
+	 * a separate index for each blog
+	 * attempts to be smart about not being in WPMU
+	 *
+	 * @return string - blog post index table name
+	 */
+	function cfs_get_index_table() {
+		global $wpdb;
+		if (isset($wpdb->blogid)) {
+			return "cfs_" . $wpdb->blogid . "_document_index";
+		}
+		else {
+			return 'cfs_document_index';
+		}
+	}
+	
+	/**
+	 * return the global search index name
+	 * @return string - global search index name
+	 */
+	function cfs_get_global_index_table() {
+		return 'cfs_global_document_index';
+	}
+	
+	/**
+	 * Return the table that should be searched in this context
+	 * Requires global indexing to be enabled and search param of 'global_search' to be set
+	 *
+	 * @param object $search - the current search object
+	 * @return string - table to be searched
+	 */
+	function cfs_get_search_table(&$search) {
+		if (cfs_do_global_index() && $search->params['global_search'] > 0) {
+			return cfs_get_global_index_table();
+		}
+		else {
+			return cfs_get_index_table();
+		}
+	}
+	
+	/**
+	 * return wether we're doing global search indexing or not
+	 * @return bool - true if we're doing global searching & indexing
+	 */
+	function cfs_do_global_index() {
+		global $wpdb;
+		return isset($wpdb->blogid) && CFS_GLOBAL_SEARCH;
+	}
+	
+	/**
+	 * Indexes incoming post for later fulltext searches by inserting
+	 * relevant text strings into a custom indexed table
+	 * If global indexing enabled this also inserts into the global index table
+	 *
+	 * @param object $post - the post object to be indexed
+	 */
+	function cfs_index_post($post) {
+		
+		// don't do anything on revisions
+		if ($post->post_type == 'revision') {
+			dbg('cfs_index_post','error: post is a revision');
+			return;
+		}
+		
+		// don't save drafts
+		if ($post->post_status == 'draft') {
+			dbg('cfs_index_post','error: post is a draft');
+			return;
+		}
+		
+		// make sure we have an ID
+		if (!$post->ID) {
+			dbg('cfs_index_post', 'error: missing post ID');
+			return;
+		}
+	
+		// only index finals
+		if ($post->post_parent != 0) {
+			dbg('cfs_index_post', 'aborting: not final draft');
+			return;
+		}
+		
+		// dbg('cfs_index_post', $post);
+		
+		// all categories belonging to this post
+		$postCats = wp_get_post_categories($post->ID, array('fields' => 'all'));
+		$cats = array();
+		foreach($postCats as $thisCat) {
+			$cats[] = $thisCat->name;
+		}
+
+		$tags = wp_get_object_terms($post->ID, 'post_tag', array('fields' => 'names'));
+		
+		// removed in favor of single author - multiple authors can be added via a filter to be added later on
+		//$author = get_post_meta($post->ID, 'cfs_authors', false);
+		$authordata = get_userdata($post->post_author);
+
+		if (empty($authordata)) { $author = ''; }
+		else if (!empty($authordata->user_nicename)) { $author = $authordata->user_nicename; }
+		else { $author = $authordata->user_login; }
+
+		// put all that in the index
+		$index_table = cfs_get_index_table();
+		global $wpdb;
+		$sql = trim("
+			replace into {$index_table} (post_id, categories, tags, author, title, excerpt, content) 
+			values (%d, %s, %s, %s, %s, %s, %s)"
+		);
+		$qry = $wpdb->prepare($sql,
+			$post->ID,
+			implode(' ', $cats),
+			implode(' ', $tags),
+			$author,
+			trim(strip_tags($post->post_title)),
+			trim(strip_tags($post->post_excerpt)),
+			trim(strip_tags($post->post_content))
+		);
+		$wpdb->query($qry);
+		
+		if (cfs_do_global_index()) {
+			$global_index_table = cfs_get_global_index_table();
+			$global_sql = trim("
+				replace into {$global_index_table} (post_id, categories, tags, author, post_title, post_excerpt, post_content, post_date, post_date_gmt, post_author, post_category, post_password, ".
+													"post_name, post_modified, post_modified_gmt, post_content_filtered, post_parent, guid, post_type, blog_id, title, excerpt, content) 
+				values (%d, %s, %s, %s, %s, %s, %s, %s, %s, %d, %d, %s, %s, %s, %s, %s, %d, %s, %s, %d, %s, %s, %s)"
+			);
+			$global_qry = $wpdb->prepare($global_sql,
+				$post->ID,
+				implode(' ', $cats),
+				implode(' ', $tags),
+				$author,
+				$post->post_title,
+				$post->post_excerpt,
+				$post->post_content,
+				$post->post_date,
+				$post->post_date_gmt,
+				$post->post_author,
+				$post->post_category,
+				$post->post_password,
+				$post->post_name,
+				$post->post_modified,
+				$post->post_modified_gmt,
+				$post->post_content_filtered,
+				$post->post_parent,
+				$post->guid,
+				$post->post_type,
+				$wpdb->blogid,
+				trim(strip_tags($post->post_title)),
+				trim(strip_tags($post->post_excerpt)),
+				trim(strip_tags($post->post_content))
+			);
+			$wpdb->query($global_qry);			
+		}
+	}
+	
+	/**
+	 * Remove a specified post from the index(es)
+	 * just delete from the index where postid
+	 * Handles both local and global indexes
+	 *
+	 * @param int $postid - id of the post to remove
+	 */
+	function cfs_deindex_post($postid = 0) {
+		if (!$postid) {
+			dbg('cfs_deindex_post', 'aborting: no postID');
+			return;
+		}
+		
+		dbg('cfs_deindex_post', $postid);
+		global $wpdb;
+		$index_table = cfs_get_index_table();
+		$sql = "delete LOW_PRIORITY from {$index_table} where post_id = %d";
+		$qry = $wpdb->prepare($sql,$postid);
+		$wpdb->query($qry);
+		
+		if (cfs_do_global_index()) {
+			$global_index_table = cfs_get_global_index_table();
+			$global_sql = "delete LOW_PRIORITY from {$global_index_table} where post_id = %d and blog_id = %d";
+			$global_qry = $wpdb->prepare($global_sql,$postid,$wpdb->blogid);
+			$wpdb->query($global_qry);
+		}
+	}
+
+	/**
+	 * Independent function to perform a search
+	 * Default behavior is to do a search, but can also return a SQL search string to 
+	 * pass to wp_query to override the default query
+	 *
+	 * @param array $options - array of default settings overrides
+	 * @param bool $wp_search - wether to perform the search or just return SQL
+	 */
+	function &cfs_execute_search($options=array(),$wp_search=false) {
+		$defaults = cfs_get_search_fields(true);
+		$search = new stdclass;
+		$search->params = array_merge($defaults, $options);
+
+		cfs_build_search_sql($search);
+		
+		if (!$wp_search) {
+			global $wpdb;		
+			$search->results = $wpdb->get_results($search->sql_processed, OBJECT);
+			$search->found_rows = $wpdb->get_var('select found_rows()');
+			return $search;
+		}
+		else {
+			return $search->sql_processed;
+		}		
+	}
+	
+	/**
+	 * return a list of search fields for processing/population
+	 * Can be toggled to return array of params with defaults
+	 * 
+	 * @param bool $defaults - wether we're returning a full array with default values or just returning the keys
+	 * @return array
+	 */
+	function cfs_get_search_fields($defaults=false) {
+		$fields = array(
+			'start_row' => 0, 
+			'row_count' => 10, 
+			'search_string' => '', 
+			'category_filter' => '', 
+			'author_filter' => '', 
+			'tag_filter' => '',
+			'sort_order' => '',
+			/*'search_author' => 0,
+			'search_category' => 0,
+			'search_tag' => 0,*/
+			'author_filter' => '',
+			'tag_filter' => '',
+			'category_filter' => '',
+			'author_exclude' => '',
+			'category_exclude' => '',
+			'tag_exclude' => '',
+			'global_search' => 0
+		);
+		return $defaults ? $fields : array_keys($fields);
+	}
+	
+	/**
+	 * Retrieves relevant search params from get/post
+	 * Sets appropriate flags for search filtering as well
+	 *
+	 * @return array - processed array of search params
+	 */
+	function cfs_search_params() {
+		global $wp_query;
+		
+		$params = array();
+		$searchfields = cfs_get_search_fields();
+	
+		foreach($searchfields as $f) {
+			// catch our search filters as IE work around
+			if ($f == 'search_tag' || $f == 'search_category' || $f == 'search_author' || $f == 'global_search') {
+				if (isset($_POST['cfs_'.$f]) || isset($_GET['cfs_'.$f])) {
+					$params[$f] = 1;
+				}
+			}
+			else if ($f == 'search_string' && isset($_GET['s'])) {
+				// hijack the WP search variable	
+				$params[$f] = $_GET['s'];
+			}
+			else {
+				if ($thisparam = cfs_param("cfs_$f")) {
+					$params[$f] = $thisparam;
+				}
+			}
+		}
+		// handle paginated query
+		if ($wp_query->is_paged && isset($_GET['s'])) {
+			$params['start_row'] = ($wp_query->query_vars['paged']-1) * $wp_query->query_vars['posts_per_page'];
+			$params['row_count'] = $wp_query->query_vars['posts_per_page'];
+		}
+	
+		return count($params) ? $params : null;
+	}
+	
+	/**
+	 * Assembles search string based on request params
+	 * Handles does final handling of excludes, sorting and filtering 
+	 * 
+	 * @param object $search - the current search object
+	 */
+	function cfs_build_search_sql(&$search) {
+		global $wpdb;
+		
+		//echo '<pre>',var_dump($search->params),'</pre>';
+		
+		// global search toggles
+		if ($search->params['global_search'] > 0) {
+			$index_table = cfs_get_global_index_table();
+			$fields = '
+					post_id as ID,
+					post_author,
+					post_date,
+					post_date_gmt,
+					post_title,
+					post_name,
+					post_category,
+					post_excerpt,
+					guid,
+					post_content,
+					categories,
+					tags,
+					author,
+					blog_id,
+				';
+			$from = "
+				from {$index_table}
+				";
+		}	
+		else {
+			$index_table = cfs_get_index_table();
+			$fields = '
+					p.ID,
+					p.post_author,
+					p.post_date as post_date,
+					p.post_date_gmt,
+					p.post_title,
+					p.post_name,
+					p.post_category,
+					p.post_excerpt,
+					p.guid,
+					p.comment_count,
+					p.post_content,
+					i.categories,
+					i.tags,
+					i.author,
+				';
+			$from = "
+				from {$index_table} i
+					left join {$wpdb->posts} p on i.post_id = p.ID
+				";
+		}
+		
+		// sorting order
+		switch($search->params['sort_order']) {
+		
+			// date
+			case 'date':
+				$orderby = "post_date desc";
+				break;
+				
+			// relevance
+			default:
+				$orderby = "relevancy_categories, relevancy_tags, relevancy_title desc, relevancy_content desc, relevancy_authors desc";
+				break;
+		}
+		
+		// build potential exclude lists
+		$excludes = '';
+		foreach(array('categories' => 'category_exclude', 'author' => 'author_exclude','tags' => 'tags_exclude') as $column => $exclude_type) {
+			if (isset($search->params[$exclude_type]) && !empty($search->params[$exclude_type])) {
+				$excludes .= 'and not match('.$column.') against(\''.$search->params[$exclude_type].'\') ';
+			}
+		}
+
+		// this search seems to liberal in the first where clause
+		$search->sql = trim("
+		
+			select SQL_CALC_FOUND_ROWS
+				{$fields}
+				match(categories) against (%s IN BOOLEAN MODE) as relevancy_categories,
+				match(tags) against (%s IN BOOLEAN MODE) as relevancy_tags,
+				match(title) against (%s IN BOOLEAN MODE) as relevancy_title,
+				match(excerpt,content) against (%s IN BOOLEAN MODE) as relevancy_content,
+				match(author) against (%s IN BOOLEAN MODE) as relevancy_authors
+			{$from}
+			where (
+					match(categories) against (%s IN BOOLEAN MODE) or
+					match(tags) against (%s IN BOOLEAN MODE) or
+					match(title) against (%s IN BOOLEAN MODE) or
+					match(excerpt,content) against (%s IN BOOLEAN MODE) or 
+					match(author) against (%s IN BOOLEAN MODE)
+				)
+				and (
+					('' = %s) or (match(categories) against (%s IN BOOLEAN MODE) > 0)
+				)
+				and (
+					('' = %s) or (match(author) against (%s IN BOOLEAN MODE) > 0)
+				)
+				and (
+					('' = %s) or (match(tags) against (%s IN BOOLEAN MODE) > 0)
+				)
+			{$excludes}
+			order by {$orderby}
+			limit %d, %d
+		
+		");
+
+		$search->params['search_string'] = str_replace(' ',',',trim($search->params['search_string']));
+
+
+		$match_categories = $match_author = $match_keyword = '';
+		$topic_filter = $author_filter = $keyword_filter = '';
+
+		// do category filtering
+		if ($search->params['category_filter'] !== '') {
+			$match_categories = $search->params['category_filter'];
+			$category_filter = $search->params['category_filter'];
+		}
+		else {
+			$match_categories = $search->params['search_string'];
+		}
+		
+		// modify match author based on UI choices
+		if ($search->params['author_filter'] !== '') {
+			$match_author = $search->params['author_filter'];
+			$author_filter = $search->params['author_filter'];
+		}
+		else {
+			$match_author = $search->params['search_string'];
+		}
+
+		// tag filter
+		if ($search->params['tag_filter'] !== '') {
+			$match_tag = $search->params['tag_filter'];
+			$tag_filter = $search->params['tag_filter'];
+		}
+		else {
+			$match_tag = $search->params['search_string'];
+		}
+				
+		// apply search params
+		$search->sql_processed = $wpdb->prepare($search->sql,
+			$match_categories, 					// relevancy_categories
+			$match_tag, 						// relevancy_tags
+			$search->params['search_string'], 	// relevancy_title
+			$search->params['search_string'], 	// relevancy_content
+			$match_author,					 	// relevancy_authors
+			$match_categories,	 				// match(categories)
+			$match_tag, 						// match(tags)
+			$search->params['search_string'], 	// match(title)
+			$search->params['search_string'], 	// match(excerpt,content)
+			$match_author, 						// match(author)
+			$category_filter,					// '' = %s (topic)
+			$category_filter,					// or match(topic)
+			$author_filter,						// '' = %s (author)
+			$author_filter, 					// or match(author)
+			$tag_filter,				 		// '' = %s (tags)
+			$tag_filter,				 		// or match(tags)
+			$search->params['start_row'], 		// limit start
+			$search->params['row_count'] 		// limit amount
+		);
+	}
+
+	
+	
+// UTILS
+
+	function cfs_save_option($name, $value) {
+		if (get_option($name) === false) {
+			add_option($name, $value, $depreciated = '', $autoload = 'no');
+		}
+		update_option($name, $value);
+	}
+	
+	function cfs_get_option($name, $default = null) {
+		if (($val = get_option($name)) == false) {
+			return $default;
+		}
+		return $val;
+	}
+
+	function cfs_param($name, $default = null, $scopes = null) {
+		if ($scopes == null) {
+			$scopes = array($_POST, $_GET);
+		}
+		foreach($scopes as $thisScope) {
+			if (isset($thisScope[$name]) && trim($thisScope[$name]) != '') {
+				return !get_magic_quotes_gpc() ? stripslashes($thisScope[$name]) : $thisScope[$name];
+			}
+		}
+		return $default;
+	}
+	
+	function cfs_coalesce() {
+		$args = func_get_args();
+		foreach($args as $v) {
+			if ($v !== null) return $v;
+		}
+		return null;
+	}
+
+	if (!function_exists('dbg')) {
+		function dbg($n, $v) {}
+	}
+
+	
+// UI Helpers
+
+	/**
+	 * get all categories from all blogs
+	 * stores result in wp_cache to alleviate switch to blog
+	 * madness in subsequent requests
+	 *
+	 * @return array
+	 */
+	function cfs_get_global_categories() {
+		$categories = maybe_unserialize(wp_cache_get('cfs_global_categories'));
+		if(is_array($categories)) { return $categories; }
+		
+		$categories = array();
+		$blogs = get_blog_list();
+		
+		foreach($blogs as $blog) {
+			switch_to_blog($blog['blog_id']);
+			$categories = array_merge($categories,cfs_get_categories());
+		}
+		
+		wp_cache_add('cfs_global_categories',$categories);
+		return $categories;		
+	}
+
+	// retrieves all categories and formats the array for internal use
+	function cfs_get_categories() {
+		$categories = array();
+		$cats = get_categories();
+		
+		foreach($cats as $cat) {
+			$categories[$cat->cat_ID] = $cat->name;
+		}
+		return $categories;
+	}
+	
+
+	/**
+	 * grab list of authors
+	 * pulls anyone with capabilities higher than subscriber
+	 * optionally grab the displayname along with the nicename
+	 *
+	 * @param bool $fullname - true if fullname should be pulled as well, maybe deprecated
+	 * @return array - list of authors
+	 */
+	function cfs_get_authors($fullname=false) {
+		global $wpdb;
+
+		$capabilities = (CFS_GLOBAL_SEARCH === true ? '%capabilities' : $wpdb->prefix.'capabilities');
+		$sql = "
+			SELECT DISTINCT u.ID,
+				u.user_nicename,
+				u.display_name
+			from {$wpdb->users} AS u, 
+				{$wpdb->usermeta} AS um
+			WHERE u.user_login <> 'admin'
+			AND u.ID = um.user_id
+			AND um.meta_key LIKE '{$capabilities}'
+			AND um.meta_value NOT LIKE '%subscriber%'
+			ORDER BY u.user_nicename
+			";
+		$results = array();
+		$users = $wpdb->get_results($sql);
+		foreach($users as $u) {
+			$results[$u->ID] = ($fullname ? $u : $u->user_nicename);
+		}
+		return $results;
+	}
+	
+	function cfs_get_sort_options() {
+		$sortOptions = array(
+			'relevance' => 'Sort by relevance',
+			'date' => 'Sort by date'
+		);
+		return $sortOptions;
+	}
+	
+	function cfs_pulldown($options, $selected_values = null, $useArrayKeyAsValue = true) {
+		$html = '';
+		if (is_array($options)) {
+			foreach($options as $key => $label) {
+				$value = ($useArrayKeyAsValue) ? $key : $label;
+				$html .= '<option value="'.$value.'">'.$label.'</option>';
+			}
+			if ($selected_values) {
+				if (!is_array($selected_values)) {
+					$selected_values = array($selected_values);
+				}
+				foreach($selected_values as $val) {
+					$find = 'value="'.$val.'"';
+					$html = str_ireplace($find, $find . ' selected', $html);
+				}
+			}
+		}
+		return $html;
+	}
+	
+	/**
+	 * Function to build a search freindly list of authors
+	 * delivers string of <option> items
+	 * 	- key = user_nicename
+	 *  - value = display_name
+	 *
+	 * @param array $authors - list of authors
+	 * @param array $selected_values - values that should be pre-selected in the list
+	 * @return string
+	 */
+	function cfs_authors_pulldown($authors, $selected_values=array()) {
+		$html = '';
+		if (is_array($authors)) {
+			if(!is_array($selected_values)) {
+				$selected_values = array($selected_values);
+			}
+			foreach($authors as $id => $author) {
+				$selected = (in_array($author->user_nicename,$selected_values) ? ' selected="selected"' : null);
+				$html .= '<option value="'.$author->user_nicename.'"'.$selected.'>'.$author->display_name.'</option>';
+			}
+		}
+		return $html;		
+	}
+
+?>
