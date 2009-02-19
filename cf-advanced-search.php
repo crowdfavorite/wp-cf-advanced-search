@@ -54,13 +54,6 @@ Author URI: http://crowdfavorite.com
 			add_action('deleted_post', 'cfs_deleted_post');
 			add_action('save_post', 'cfs_save_post', 10000, 2);
 			add_action('transition_post_status', 'cfs_transition_post_status', null, 3);
-		
-			// post editor modifications - most of this will move in to a multiple-authors plugin
-				add_action('admin_head-post-new.php', 'cfs_post_ui');
-				add_action('admin_head-post.php', 'cfs_post_ui');
-				add_action('admin_head-post-new.php', 'cfs_post_header_scripts');
-				add_action('admin_head-post.php', 'cfs_post_header_scripts');
-				add_action('save_post', 'cfs_store_custom_metafields', 9999, 1);
 
 			// rebuild index page functions
 			add_action('admin_menu','cfs_admin_menu_item');
@@ -274,128 +267,7 @@ Author URI: http://crowdfavorite.com
 		}
 	}
 
-	
-// MULTIPLE AUTHORS
 
-	/**
-	 * Add multiple authors post-meta box
-	 */
-	function cfs_post_ui() {
-		// author management
-		add_meta_box('cfs_post_multiple_authors', __('Multiple Authors'), 'cfs_post_authors_ui', 'post', 'normal', 'low');
-	}
-	
-	/**
-	 * Styles and Javascript needed for picking multiple authors
-	 */
-	function cfs_post_header_scripts() {
-		echo '
-			<style type="text/css">
-				<!--
-					/* Added by CF Advanced Search to style the multi-author select area */
-					/* copied from category picker because it was all hardcoded to an ID instead of classed */
-					#cfs_post_multiple_authors ul {
-						list-style-image:none;
-						list-style-position:outside;
-						list-style-type:none;
-						margin:0;
-						padding:0;
-					}
-					#cfs_post_multiple_authors ul#cfs_multiple_authors_tabs {
-						float:left;
-						margin:0 -120px 0 0;
-						padding:0;
-						text-align:right;
-						width:120px;
-					}
-					ul#cfs_multiple_authors_tabs li {
-						padding:8px;
-					}
-					ul#cfs_multiple_authors_tabs li.ui-tabs-selected {
-						background-color:#CEE1EF !important;
-						-moz-border-radius-bottomleft:3px;
-						-moz-border-radius-topleft:3px;
-						-webkit-border-bottom-left-radius: 3px;
-						-webkit-border-top-left-radius: 3px;
-					}
-					ul#cfs_multiple_authors_tabs li.ui-tabs-selected a:link {
-						color:#333333;
-						font-weight:bold;
-						text-decoration:none;
-					}
-		
-				-->
-			</style>
-			<script type="text/javascript">
-				// <![CDATA[
-					// Added by CF Advanced Search to init the multi-author select area
-					jQuery(function() {
-						var multipleAuthorTabs = jQuery("#hn_multiple_authors_tabs").tabs();
-					});
-				// ]]>
-			</script>
-		';
-	}
-	
-	function cfs_post_authors_ui() {
-		global $post;
-		
-		// get currently assigned authors
-		// returns array of usernames
-		$selected_authors = get_post_meta($post->ID,'cfs_authors',false);
-		if (!is_array($selected_authors)) { $selected_authors = array(); }
-		dbg('selected authors',$selected_authors);
-		
-		// get full author list
-		// returns array of usernames
-		$all_authors = cfs_get_authors(true);
-		dbg('all authors',$all_authors);
-		$all_authors = cf_sort_by_key($all_authors,'user_nicename');
-		
-		// build output
-		$html = '
-				<p>Select the authors to assign to this post.</p>
-				<ul id="cfs_multiple_authors_tabs" class="ui-tabs-nav">
-					<li class="ui-tabs-selected"><a href="#cfs_multiple_authors_list">Authors</a></li>
-				</ul>
-				<div id="cfs_multiple_authors_list" class="ui-tabs-panel" style="display: block;">
-					<ul>
-				';
-		foreach($all_authors as $author_id => $author) {
-			$html .= '<li>
-					<label for="cfs_multiple_authors_'.$author->user_nicename.'">'.
-					'<input type="checkbox" id="cfs_multiple_authors_'.$author->user_nicename.'" name="cfs_multiple_authors[]" value="'.$author->user_nicename.'"'.
-					(in_array($author->user_nicename,$selected_authors) ? ' checked="checked"' : null).
-					'> '.
-					$author->display_name.
-					'</label>'.
-					'</li>'.PHP_EOL;
-		}
-		$html .= '
-					</ul>
-				</div>
-				';
-		
-		// output
-		echo $html;
-	}
-	
-	function cfs_store_custom_metafields($post_id) {
-		dbg('cfs_store_custom_metafields', $post_id);
-		
-		// can have multiple authors per document
-		// delete exisitng authors, then insert newly selected ones
-		$selected_authors = cfs_param('cfs_multiple_authors', array());
-		dbg('selected_authors', $selected_authors);
-
-		delete_post_meta($post_id, 'cfs_authors');
-		foreach($selected_authors as $a) {
-			add_post_meta($post_id, 'cfs_authors', $a, false);
-		}
-		
-	}
-
-	
 // ADMIN PAGE
 
 	/**
@@ -873,53 +745,52 @@ jQuery(function() {
 	 * relevant text strings into a custom indexed table
 	 * If global indexing enabled this also inserts into the global index table
 	 *
+	 * Filters
+	 * 	- cfs_post_pre_index: pre-index state of the post for modification
+	 *
 	 * @param object $post - the post object to be indexed
 	 */
 	function cfs_index_post($post) {
-		
-		// don't do anything on revisions
-		if ($post->post_type == 'revision') {
-			dbg('cfs_index_post','error: post is a revision');
-			return;
-		}
-		
-		// don't save drafts
-		if ($post->post_status == 'draft') {
-			dbg('cfs_index_post','error: post is a draft');
-			return;
-		}
-		
 		// make sure we have an ID
 		if (!$post->ID) {
 			dbg('cfs_index_post', 'error: missing post ID');
 			return;
 		}
-	
-		// only index finals
-		if ($post->post_parent != 0) {
-			dbg('cfs_index_post', 'aborting: not final draft');
+		
+		// don't do anything on drafts or revisions
+		if ($post->post_type == 'revision' || $post->post_status == 'draft' || $post->post_parent != 0) {
+			dbg('cfs_index_post','error: post is a draft or revision');
 			return;
 		}
 		
-		// dbg('cfs_index_post', $post);
+		// start gathering post information, its a bit heavy but easier for applying filters later on
+		$postdata['ID'] = $post->ID;
+		$postdata['post_title'] = trim(strip_tags($post->post_title));
+		$postdata['post_excerpt'] = trim(strip_tags($post->post_excerpt));
+		$postdata['post_content'] = trim(strip_tags($post->post_content));				
 		
-		// all categories belonging to this post
+		// all categories belonging to this post, apply a filter for accessibility later on
 		$postCats = wp_get_post_categories($post->ID, array('fields' => 'all'));
-		$cats = array();
+		$postdata['cats'] = array();
 		foreach($postCats as $thisCat) {
-			$cats[] = $thisCat->name;
+			$postdata['cats'][] = $thisCat->name;
 		}
 
-		$tags = wp_get_object_terms($post->ID, 'post_tag', array('fields' => 'names'));
+		// get tags, apply a filter for accessibility later on
+		$postdata['tags'] = wp_get_object_terms($post->ID, 'post_tag', array('fields' => 'names'));
 		
-		// removed in favor of single author - multiple authors can be added via a filter to be added later on
-		//$author = get_post_meta($post->ID, 'cfs_authors', false);
+		// grab author data and filter to allow for modification of the author data at a later time
 		$authordata = get_userdata($post->post_author);
+		if (empty($authordata)) { 
+			$postdata['author'] = ''; 
+		}
+		else {
+			$postdata['author'] = (!empty($authordata->user_nicename) ? $authordata->user_nicename : $authordata->user_login);
+		}
 
-		if (empty($authordata)) { $author = ''; }
-		else if (!empty($authordata->user_nicename)) { $author = $authordata->user_nicename; }
-		else { $author = $authordata->user_login; }
-
+		// apply filter to post data before indexing
+		$postdata = apply_filters('cfs_post_pre_index',$postdata);
+		
 		// put all that in the index
 		$index_table = cfs_get_index_table();
 		global $wpdb;
@@ -928,13 +799,13 @@ jQuery(function() {
 			values (%d, %s, %s, %s, %s, %s, %s)"
 		);
 		$qry = $wpdb->prepare($sql,
-			$post->ID,
-			implode(' ', $cats),
-			implode(' ', $tags),
-			$author,
-			trim(strip_tags($post->post_title)),
-			trim(strip_tags($post->post_excerpt)),
-			trim(strip_tags($post->post_content))
+			$postdata['ID'],
+			implode(' ', $postdata['cats']),
+			implode(' ', $postdata['tags']),
+			$postdata['author'],
+			$postdata['post_title'],
+			$postdata['post_excerpt'],
+			$postdata['post_content']
 		);
 		$wpdb->query($qry);
 		
@@ -946,10 +817,10 @@ jQuery(function() {
 				values (%d, %s, %s, %s, %s, %s, %s, %s, %s, %d, %d, %s, %s, %s, %s, %s, %d, %s, %s, %d, %s, %s, %s)"
 			);
 			$global_qry = $wpdb->prepare($global_sql,
-				$post->ID,
-				implode(' ', $cats),
-				implode(' ', $tags),
-				$author,
+				$postdata['ID'],
+				implode(' ', $postdata['cats']),
+				implode(' ', $postdata['tags']),
+				$postdata['author'],
 				$post->post_title,
 				$post->post_excerpt,
 				$post->post_content,
@@ -966,9 +837,9 @@ jQuery(function() {
 				$post->guid,
 				$post->post_type,
 				$wpdb->blogid,
-				trim(strip_tags($post->post_title)),
-				trim(strip_tags($post->post_excerpt)),
-				trim(strip_tags($post->post_content))
+				$postdata['post_title'],
+				$postdata['post_excerpt'],
+				$postdata['post_content']
 			);
 			$wpdb->query($global_qry);			
 		}
@@ -1062,6 +933,9 @@ jQuery(function() {
 	 * Retrieves relevant search params from get/post
 	 * Sets appropriate flags for search filtering as well
 	 *
+	 * Filters
+	 * 	- 'cfs_search_params' - modify the params list after its been built
+	 *
 	 * @return array - processed array of search params
 	 */
 	function cfs_search_params() {
@@ -1093,7 +967,7 @@ jQuery(function() {
 			$params['row_count'] = $wp_query->query_vars['posts_per_page'];
 		}
 	
-		return count($params) ? $params : null;
+		return apply_filters('cfs_search_params',count($params) ? $params : null);
 	}
 	
 	/**
