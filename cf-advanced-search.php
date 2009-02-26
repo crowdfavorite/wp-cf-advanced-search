@@ -1204,7 +1204,7 @@ jQuery(function() {
 		}
 		
 		wp_cache_add('cfs_global_categories',$categories);
-		return $categories;		
+		return apply_filters('cfs_get_global_categories',$categories);		
 	}
 
 	// retrieves all categories and formats the array for internal use
@@ -1215,7 +1215,7 @@ jQuery(function() {
 		foreach($cats as $cat) {
 			$categories[$cat->cat_ID] = $cat->name;
 		}
-		return $categories;
+		return apply_filters('cfs_get_categories',$categories);
 	}
 	
 
@@ -1248,7 +1248,7 @@ jQuery(function() {
 		foreach($users as $u) {
 			$results[$u->ID] = ($fullname ? $u : $u->user_nicename);
 		}
-		return $results;
+		return apply_filters('cfs_get_authors',$results,$fullname);
 	}
 	
 	function cfs_get_sort_options() {
