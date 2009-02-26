@@ -2,7 +2,7 @@
 /*
 Plugin Name: CF Advanced Search
 Plugin URI: http://crowdfavorite.com
-Description: NOT FIT FOR PUBLICATION. Advanced search functionality greater than the built in wordpress search
+Description: Advanced search functionality greater than the built in wordpress search
 Version: 1.0
 Author: Crowd Favorite
 Author URI: http://crowdfavorite.com
