@@ -1202,6 +1202,7 @@ jQuery(function() {
 			switch_to_blog($blog['blog_id']);
 			$categories = array_merge($categories,cfs_get_categories());
 		}
+		restore_current_blog();
 		
 		wp_cache_add('cfs_global_categories',$categories);
 		return apply_filters('cfs_get_global_categories',$categories);		
@@ -1210,7 +1211,7 @@ jQuery(function() {
 	// retrieves all categories and formats the array for internal use
 	function cfs_get_categories() {
 		$categories = array();
-		$cats = get_categories();
+		$cats = apply_filters('cfs_pre_get_categories',get_categories());
 		
 		foreach($cats as $cat) {
 			$categories[$cat->cat_ID] = $cat->name;
