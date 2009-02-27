@@ -1,7 +1,8 @@
 # CF Advanced Search
 
 This file will eventually become the README.txt for this plugin.   
-_Currently tested with WordPress 2.6 & Carrington theme. Standard WordPress theme not yet tested._
+
+Tested on: WordPress 2.6
 
 CF Advanced Search is a plugin that overrides the default WordPress search routine to give your WordPress site advanced search results and provide your users with greater control over searching your content. When Installed on WordPress MU the plugin can be configured to index all blogs to allow for multi-blog search results. This plugin does not create a new search results page but rather opts to use the default WordPress search results layout and pagination. The default WordPress method of performing a search, `?s=search_term`, is still used. This enables the plugin to drop in to any existing theme that has used the default WordPress in its design.
 
@@ -25,6 +26,7 @@ If your site uses the standard WordPress theme structure:
 	- select "CF Advanced Search Page" from the "Page Template" dropdown
 - activate the "Advanced Search" plugin via the WordPress Plugins admin page
 - add the page to the site navigation according to how the theme's navigation is implemented
+- build the search indexes as outlined in the Search Indexes section of this documentation
 
 
 ---
@@ -44,6 +46,7 @@ If your site uses the Carrington theme framework:
 	- select "CF Advanced Search Page" from the "Page Template" dropdown
 - activate the "Advanced Search" plugin via the WordPress Plugins admin page
 - add the page to the site navigation according to how the theme's navigation is implemented
+- build the search indexes as outlined in the Search Indexes section of this documentation
 
 
 ---
@@ -149,3 +152,41 @@ Global Search must be turned on explicitly and a filter is provided to enable th
 		return true;
 	}
 	add_filter('cfs_do_global_search','my_set_global_search');
+	
+
+---
+
+## Search Filters
+
+Searches can be modified to focus on specific categories, authors, or try to match extra keywords against post tags. Searches can also be modified to exclude by those same criteria.
+
+### Filters
+
+Filters can be used to narrow search results to the applied filters. For example: to perform a search only in the 'newsletters' category a parameter of `cfs_category_filter="newsletters"` should be passed to the search. Multiple filters can be applied to a single search.
+
+Available filters are:
+
+- `cfs_author_filter`
+- `cfs_category_filter`
+- `cfs_tag_filter`
+
+**Example filter**
+
+	<select id="category_filter" name="cfs_category_filter">
+		<option value="newsletters">Newsletters</option>
+		<option value="reports">Special Reports</option>
+	</select>
+
+### Excludes
+
+Excludes can be used to exclude information from search results. For example: to exclude anything in the `sweaters` category a parameter of `cfs_category_exclude="sweaters"` should be passed to the search. Multiple excludes can be applied to a single search. The search exclude is not secure as it still uses in page form data and GET variables to do the exclusion. If data needs to be secure and non-searchable it should be excluded from the search indexing.
+
+Available excludes are:
+
+- `cfs_author_exclude`
+- `cfs_category_exclude`
+- `cfs_tag_exclude`
+
+**Example exclude**
+
+	<input type="hidden" name="cfs_category_exclude" value="sweaters" />
