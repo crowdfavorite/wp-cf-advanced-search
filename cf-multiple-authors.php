@@ -1,6 +1,9 @@
 <?php
 /*
 Temporary dumping ground for the multiple author functionality being stripped from the advanced-search plugin
+@TODO - change name space
+@TODO - remove dependence on cfs_* functions
+@TODO - provide accessor functions to the stored data
 */
 
 // ACTIONS

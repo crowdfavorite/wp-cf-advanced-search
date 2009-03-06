@@ -9,17 +9,10 @@ Author URI: http://crowdfavorite.com
 */
 
 /*
-@TODO - extract multiple author data in to separate plugin
-	- pull action functions
-	- pull assistive functions
-	
 @TODO - remove individual site from global index on deactivate?
 @TODO - be sure to trim filter inputs
-@TODO - apply filter to page-title on search results
-		to populate the entire search query in link
 @TODO - pre-build category link lists when building post data
 		during switch_to_blog
-@TODO - move to plugin libary once it has been abstracted enough
 */
 
 	//error_reporting(E_ALL ^ E_NOTICE);
