@@ -470,11 +470,12 @@ jQuery(function() {
 	 * that indexing posts is separated from table index creation
 	 */
 	function cfs_build_batch_index() {
+		cfs_destroy_indices();
 		cfs_create_indices();
 		
 		// rebuild global indices
 		if (cfs_do_global_index()) { 
-			//cfs_destroy_global_indices();
+			cfs_destroy_global_indices();
 			cfs_create_global_indices();		
 		}
 		
@@ -610,7 +611,7 @@ jQuery(function() {
 			) ENGINE=MyISAM;
 		";
 		$res = $wpdb->query($sql);
-		error_log('MySQL Returned: '.$res);
+		//error_log('MySQL Returned: '.$res);
 		return $res;
 	}
 
@@ -649,11 +650,11 @@ jQuery(function() {
 		global $wpdb;
 		$index_table = ($global ? cfs_get_global_index_table() : cfs_get_index_table());
 		$statements = array(
-			"alter table {$index_table} drop index `ft_tags`;",
-			"alter table {$index_table} drop index `ft_categories`;",
-			"alter table {$index_table} drop index `ft_title`;",
-			"alter table {$index_table} drop index `ft_content`;",
-			"alter table {$index_table} drop index `ft_author`;"
+			"drop index `ft_tags` on {$index_table};",
+			"drop index `ft_categories` on {$index_table};",
+			"drop index `ft_title` on {$index_table};",
+			"drop index `ft_content` on {$index_table};",
+			"drop index `ft_author` on {$index_table};",
 		);
 		foreach($statements as $sql) {
 			$wpdb->query($sql);
