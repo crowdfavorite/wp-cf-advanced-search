@@ -55,18 +55,19 @@ Author URI: http://crowdfavorite.com
 				wp_enqueue_script('cfs-search-admin-js',get_bloginfo('wpurl').'/index.php?cfs-search-admin-js=1',array('jquery'),CFS_SEARCH_VERSION);
 			}
 		}
+		else {
+			// modify the sql query in the wp-query object
+			add_action('posts_request','cfs_posts_request_action');
+			// modify the posts as they're returned from the wp-query posts query
+			add_action('the_posts','cfs_posts_results_action'); 
 		
-		// modify the sql query in the wp-query object
-		add_action('posts_request','cfs_posts_request_action');
-		// modify the posts as they're returned from the wp-query posts query
-		add_action('the_posts','cfs_posts_results_action'); 
-		
-		// modify the post url if blog_id is found on the post object
-		add_action('post_link','cfs_posts_permalink_action',10,2);
-		// modify the author link if blog_id is found on the post object
-		add_action('author_link','cfs_author_link_action',10,3);
-		// help out the query parsing to ensure our search is performed 
-		add_action('request','cfs_parse_query');		
+			// modify the post url if blog_id is found on the post object
+			add_action('post_link','cfs_posts_permalink_action',10,2);
+			// modify the author link if blog_id is found on the post object
+			add_action('author_link','cfs_author_link_action',10,3);
+			// help out the query parsing to ensure our search is performed 
+			add_action('request','cfs_parse_query');		
+		}
 	}
 
 // INIT
