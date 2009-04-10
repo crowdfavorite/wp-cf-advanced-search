@@ -785,6 +785,10 @@ jQuery(function() {
 
 		// apply filter to post data before indexing
 		$postdata = apply_filters('cfs_post_pre_index',$postdata);
+		// interpret false post data as 'do not index'
+		if($postdata === false) {
+			return;
+		}
 		
 		// put all that in the index
 		$index_table = cfs_get_index_table();
