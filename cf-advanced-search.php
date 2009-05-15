@@ -1048,7 +1048,13 @@ jQuery(function() {
 				$excludes .= 'and not match('.$column.') against(\''.$search->params[$exclude_type].'\') ';
 			}
 		}
-
+		
+		// last chance for filters
+		$fields = apply_filters('cfas-search-fields',$fields,$search->params);
+		$from = apply_filters('cfas-search-from',$from,$search->params);
+		$excludes = apply_filters('cfas-search-where',$excludes,$search->params);
+		$orderby = apply_filters('cfas-search-orderby',$orderby,$search->params);
+		
 		// this search seems to liberal in the first where clause
 		$search->sql = trim("
 		
