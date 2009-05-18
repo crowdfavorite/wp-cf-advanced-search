@@ -1250,7 +1250,7 @@ jQuery(function() {
 			ORDER BY u.user_nicename
 			";
 		$results = array();
-		$users = $wpdb->get_results($sql);
+		$users = $wpdb->get_results(apply_filters('cfs_get_authors_sql',$sql));
 		foreach($users as $u) {
 			$results[$u->ID] = ($fullname ? $u : $u->user_nicename);
 		}
