@@ -826,7 +826,6 @@ jQuery(function() {
 				$post->post_date,
 				$post->post_date_gmt,
 				$post->post_author,
-				$post->post_category,
 				$post->post_password,
 				$post->post_name,
 				$post->post_modified,
@@ -977,6 +976,7 @@ jQuery(function() {
 	 */
 	function cfs_build_search_sql(&$search) {
 		global $wpdb;
+		xdebug_break();
 		
 		//echo '<pre>',var_dump($search->params),'</pre>';
 		
@@ -1012,7 +1012,6 @@ jQuery(function() {
 					p.post_date_gmt,
 					p.post_title,
 					p.post_name,
-					p.post_category,
 					p.post_excerpt,
 					p.guid,
 					p.comment_count,
