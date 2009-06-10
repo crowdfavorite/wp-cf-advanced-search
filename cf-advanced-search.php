@@ -1,9 +1,9 @@
 <?php
 /*
-Plugin Name: CF Advanced Search
+Plugin Name: CF Advanced Search - Category Exclude branch
 Plugin URI: http://crowdfavorite.com
 Description: Advanced search functionality greater than the built in wordpress search
-Version: 1.0
+Version: 1.1b
 Author: Crowd Favorite
 Author URI: http://crowdfavorite.com
 */
@@ -23,7 +23,7 @@ Author URI: http://crowdfavorite.com
 	/**
 	 * Development Version
 	 */
-	define('CFS_SEARCH_VERSION',1.0);
+	define('CFS_SEARCH_VERSION','1.1b');
 	
 	
 // ACTIVATION
