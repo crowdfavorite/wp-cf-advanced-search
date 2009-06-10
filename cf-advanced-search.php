@@ -1045,7 +1045,7 @@ jQuery(function() {
 		$excludes = '';
 		foreach(array('categories' => 'category_exclude', 'author' => 'author_exclude','tags' => 'tags_exclude') as $column => $exclude_type) {
 			if (isset($search->params[$exclude_type]) && !empty($search->params[$exclude_type])) {
-				$excludes .= 'and not match('.$column.') against(\''.$search->params[$exclude_type].'\') ';
+				$excludes .= 'and not match('.$column.') against(\''.$search->params[$exclude_type].'\' IN BOOLEAN MODE) ';
 			}
 		}
 		
