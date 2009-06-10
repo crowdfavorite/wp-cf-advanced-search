@@ -89,6 +89,13 @@ Author URI: http://crowdfavorite.com
 		}
 	
 		if (function_exists('is_admin_page') && is_admin_page()) {
+			// process actions
+			if(isset($_POST['cfs_action'])) {
+				if(function_exists('cfs_'.$_POST['cfs_action'])) {
+					call_user_func('cfs_'.$_POST['cfs_action']);
+				}
+			}
+			
 			// rebuild database indexes
 			if (isset($_POST['cfs_rebuild_indexes']) && isset($_POST['cfs_batch_offset'])) {
 				cfs_batch_reindex();
@@ -204,8 +211,39 @@ Author URI: http://crowdfavorite.com
 			<style type="text/css">
 				<!--
 					/* Added by CF Advanced Search for admin styling */
-					div.updated.finished { border-color: green; background-color: #E7FFDB; }
-					div.updated.error { border-color: red; background-color: #FDEAC9; }
+					div.updated.finished { 
+						border-color: green; 
+						background-color: #E7FFDB; 
+					}
+					div.updated.error { 
+						border-color: red; 
+						background-color: #FDEAC9; 
+					}
+					div#cfs-search-excludes { width: 85%; }
+					div.cfs-select-list-wrapper {
+						padding: 10px;
+						width: auto;
+						display: block;
+						height: 200px;
+						overflow: auto;
+						border-top: 1px dotted #DFDFDF;
+					}
+					ul.cfs-select-list {
+						width: 95%;
+						overflow: hidden;
+					}
+					ul.categorychecklist { margin-left: 1em; }
+					ul.children { margin-left: 1.5em; }
+					div.postbox div.inside {
+						margin:10px;
+						position:relative;
+					}
+					hr.lofi {
+						border: 1px solid #DFDFDF;
+						border-width: 1px 0 0 0;
+						width: 85%;
+						margin-left: 0;
+					}
 				-->
 			</style>
 		';
@@ -227,6 +265,7 @@ Author URI: http://crowdfavorite.com
 	}
 
 	// actions requested through GET vars
+	// deprecated ?
 	function cfs_request_handler() {
 		if ($action = cfs_param('cfs_action')) {
 			$fn = "cfs_request_$action";
@@ -266,44 +305,163 @@ Author URI: http://crowdfavorite.com
 
 	/**
 	 * Admin page wrapper
+	 *
+	 * @return void
 	 */
 	function cfs_admin() {
 		echo '
-				<div class="wrap cfs_wrap">
-					<h2>Advanced Search Admin</h2>
+			<div class="wrap cfs_wrap">
+				<h2>Advanced Search Admin</h2>
 			';
+		cfs_admin_messages();
 		cfs_rebuild_index_form();
+		echo '<hr class="lofi" />';
+		cfs_exclude_form();
 		echo '
-				</div>
+			</div>
 			';
 	}
 	
 	/**
+	 * Show appropriate admin messages
+	 *
+	 * @return void
+	 */
+	function cfs_admin_messages() {
+		if(!isset($_GET['cfs_message'])) { return; }
+			
+		switch(strtolower(strval($_GET['cfs_message']))) {
+			case 'excludes-1':
+				$message = 'Excludes updated. Remember to rebuild the index for the changes to take full effect.';
+				break;
+			case 'excludes-2':
+				$message = 'Error updating excludes.';
+				break;
+			default:
+				$message = 'Unknown return message';
+		}
+		
+		echo '
+			<div id="message" class="updated fade below-h2">
+				<p>'.$message.'</p>
+			</div>
+			<script type="text/javascript">
+				//<[CDATA[
+					jQuery(function(){ setTimeout(function(){ jQuery("#message").slideToggle(); },20000); })
+				//]]>
+			</script>
+			';
+		return;
+	}
+	
+	/**
+	 * Form to manage editing of exclusions from search index
+	 * Actual exclusions are performed on the 'cfs_post_pre_index' filter during index time
+	 * 
+	 * Any excludes that need to be added need to be added in 3 places:
+	 *	1. Add admin page items in this function
+	 *	2. Add exclude save process to function 'cfs_process_excludes'
+	 *	3. Add exclude processing to function 'cfs_do_excludes' to apply the exclude rules
+	 * 
+	 * @see function 'cfs_do_excludes' for the actual exclude process
+	 *
+	 * @return void
+	 */
+	function cfs_exclude_form() {
+		$excludes = get_option('cfs_excludes',array());
+		echo '
+				<h3>Search Excludes</h3>
+				<form name="cfs-search-exlude-form" id="cfs-search-exclude-form" method="post">
+					<div id="cfs-search-excludes" class="metabox-holder">
+						<div id="cfs-category-excludes" class="postbox">
+							<h3 class="hndl">Categories</h3>
+							<div class="inside">
+								<p>Select categories from the list below that you would like to <b>EXCLUDE</b> from the search index. Any post who is ONLY in one or more of these categories will not be indexed. If a post is in an excluded category plus a category that is regularly indexed that post will be indexed.</p>
+							</div>
+							<div class="cfs-select-list-wrapper">
+								<ul id="categorychecklist" class="list:category categorychecklist form-no-clear cfs-select-list">
+			';	
+		wp_category_checklist(0, false, $excludes['categories']);
+		echo '
+								</ul>
+							</div>
+						</div>
+					</div>
+					<input type="hidden" name="cfs_action" value="process_excludes" />
+					<p class="submit"><input type="submit" name="submit" value="Save Excludes" class="button-primary" /></p>
+				</form>
+			';
+	}
+	
+	/**
+	 * Process Excludes
+	 * Leaves the window open for further excludes to be added to the system
+	 *
+	 * @return void
+	 */
+	function cfs_process_excludes() {
+		if(strtolower($_SERVER['REQUEST_METHOD']) != 'post') { return false; }
+				
+		$excludes = get_option('cfs_excludes',array());
+		
+		if(isset($_POST['post_category'])) {
+			// since we used a default WP function to output the 
+			// category checklist its named as if it were working on a post
+			$excludes['categories'] = array_map('intval',$_POST['post_category']);
+		}
+		
+		$redirect = 'options-general.php?page=advanced-search-admin';
+		if(update_option('cfs_excludes',$excludes)) {
+			$redirect .= '&cfs_message=excludes-1&cfs_suggest_rebuild';
+		}
+		else {
+			$redirect .= '&cfs_message=excludes-2';
+		}
+		wp_redirect($redirect);
+		exit;
+	}
+	
+	/**
 	 * Rebuild Indexes form
+	 *
+	 * @return void
 	 */
 	function cfs_rebuild_index_form() {
 		global $wpdb;
 		$status = cfs_index_table_status();
 		echo '
 				<h3>Search Index</h3>
+				<div id="cfs-search-index">
 			';
 		if(CFS_GLOBAL_SEARCH) {
-			echo '<p>Global Search is enabled. This blog will be searchable via the global search index.</p>';
+			echo '
+					<p>Global Search is enabled. This blog will be searchable via the global search index.</p>
+				';
 		}
 		echo '
-				<div id="cfs-index-info">
-					<ul class="index-info">
-						<li><strong>Last Full Index:</strong> <span id="cfs_create_time">'.$status->Create_time.'</span></li>
-						<li><strong>Last Update (post insert):</strong> <span id="cfs_update_time">'.$status->Update_time.'</span></li>
-						<li><strong>Indexed Posts:</strong> <span id="cfs_num_rows">'.$status->Rows.'</span></li>
-					</ul>
+					<div id="cfs-index-info">
+						<ul class="index-info">
+							<li><strong>Last Full Index:</strong> <span id="cfs_create_time">'.$status->Create_time.'</span></li>
+							<li><strong>Last Update (post insert):</strong> <span id="cfs_update_time">'.$status->Update_time.'</span></li>
+							<li><strong>Indexed Posts:</strong> <span id="cfs_num_rows">'.$status->Rows.'</span></li>
+						</ul>
+					</div>
+					<h3>Rebuild Search Index</h3>
+					<p>Rebuild indexes. This can take a while with large numbers of posts. <br /><b>Do not leave this page until the index process has completed</b>.</p>
+					<div id="index-status"><p id="index-status-update"></p></div>
+					<form id="cfs_rebuild_indexes_form" method="post" action="" onsubmit="return false;">
+		';
+		if(isset($_GET['cfs_suggest_rebuild'])) {
+			echo '
+				<div id="message-rebuild" class="updated fade below-h2">
+					<p>You should rebuild the search index now</p>
 				</div>
-				<h3>Rebuild Search Index</h3>
-				<p>Rebuild indexes. This can take a while with large numbers of posts.</p>
-				<div id="index-status"><p id="index-status-update"></p></div>
-				<form id="cfs_rebuild_indexes_form" method="post" action="" onsubmit="return false;">
-					<p class="submit"><input type="submit" name="cfs_rebuild_indexes" value="Rebuild Index"></p>
-				</form>
+				';
+		}
+		echo '
+						<p class="submit"><input type="submit" name="cfs_rebuild_indexes" value="Rebuild Index" class="button-primary"></p>
+					</form>
+				</div>
 			';
 	}
 	
@@ -331,6 +489,7 @@ jQuery(function() {
 	
 	function cfs_batch_rebuild_indexes() {
 		var batch_increment = 100;
+		jQuery('#message-rebuild').hide();
 		cfs_fade_info_display(.3);
 		cfs_update_status('Processing posts');
 		cfs_rebuild_batch(0,batch_increment);
@@ -734,6 +893,28 @@ jQuery(function() {
 		global $wpdb;
 		return isset($wpdb->blogid) && CFS_GLOBAL_SEARCH;
 	}
+
+	/**
+	 * Apply the exclude rules
+	 * 
+	 * @param bool/object $post - will be false if another filter has already marked it for exclusion
+	 * @return bool/object - false to cancel index, post to continue with indexing
+	 */
+	function cfs_do_excludes($post) {
+		// quickly honor previously excluded item
+		if($post === false) { return $post; }
+		$excludes = get_option('cfs_excludes',array());
+
+		// possibly exclude post based on category association
+		if(isset($excludes['categories']) && is_array($excludes['categories']) && count($excludes['categories']) && $post !== false) {
+			// if the post still has cats after filtering out the excluded cats, allow it to index
+			$postcats = array_diff(array_keys($post['cats']),$excludes['categories']);
+			$post = count($postcats) ? $post : false;
+		}
+		
+		return $post;
+	}
+	add_filter('cfs_post_pre_index','cfs_do_excludes',9999);
 	
 	/**
 	 * Indexes incoming post for later fulltext searches by inserting
@@ -768,11 +949,15 @@ jQuery(function() {
 		$postCats = wp_get_post_categories($post->ID, array('fields' => 'all'));
 		$postdata['cats'] = array();
 		foreach($postCats as $thisCat) {
-			$postdata['cats'][] = $thisCat->name;
+			$postdata['cats'][$thisCat->term_id] = $thisCat->name;
 		}
 
 		// get tags, apply a filter for accessibility later on
-		$postdata['tags'] = wp_get_object_terms($post->ID, 'post_tag', array('fields' => 'names'));
+		//$postdata['tags'] = wp_get_object_terms($post->ID, 'post_tag', array('fields' => 'names'));
+		$postTags = wp_get_object_terms($post->ID, 'post_tag', array('fields' => 'all'));
+		foreach($postTags as $thisTag) {
+			$postdata['tags'][$thisTag->term_id] = $thisTag->name;
+		}
 		
 		// grab author data and filter to allow for modification of the author data at a later time
 		$authordata = get_userdata($post->post_author);
