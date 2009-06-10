@@ -429,6 +429,7 @@ Author URI: http://crowdfavorite.com
 	function cfs_rebuild_index_form() {
 		global $wpdb;
 		$status = cfs_index_table_status();
+		$posts_in_wordpress = $wpdb->get_row("select count(ID) as numposts from {$wpdb->posts} where post_status = 'publish' and post_parent = 0 and post_type = 'post'");
 		echo '
 				<h3>Search Index</h3>
 				<div id="cfs-search-index">
@@ -450,6 +451,7 @@ Author URI: http://crowdfavorite.com
 					<p>Rebuild indexes. This can take a while with large numbers of posts. <br /><b>Do not leave this page until the index process has completed</b>.</p>
 					<div id="index-status"><p id="index-status-update"></p></div>
 					<form id="cfs_rebuild_indexes_form" method="post" action="" onsubmit="return false;">
+						<input type="hidden" id="posts_in_wordpress" name="posts_in_wordpress" value="'.$posts_in_wordpress->numposts.'" />
 		';
 		if(isset($_GET['cfs_suggest_rebuild'])) {
 			echo '
@@ -489,6 +491,7 @@ jQuery(function() {
 	
 	function cfs_batch_rebuild_indexes() {
 		var batch_increment = 100;
+		posts_in_wordpress = jQuery('#posts_in_wordpress').val();
 		jQuery('#message-rebuild').hide();
 		cfs_fade_info_display(.3);
 		cfs_update_status('Processing posts');
@@ -514,7 +517,7 @@ jQuery(function() {
 					setTimeout(cfs_rebuild_indexes,500); // slight pause for effect
 				}
 				else if (r.result) {
-					cfs_update_status(r.message);
+					cfs_update_status('Processing ' + offset + ' of ' + posts_in_wordpress + ' total posts...');
 					cfs_rebuild_batch(offset+increment,increment);
 				}
 			},'json');
@@ -528,7 +531,7 @@ jQuery(function() {
 					jQuery('#cfs_create_time').html(response.create_time);
 					jQuery('#cfs_update_time').html(response.update_time);
 					jQuery('#cfs_num_rows').html(response.num_rows);
-					cfs_update_status('Post Indexing Complete.',true);
+					cfs_update_status('Post Indexing Complete. <b>' + response.num_rows + '</b> Posts Indexed.',true);
 					cfs_fade_info_display(1);
 				}
 				else {
