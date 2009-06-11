@@ -1496,5 +1496,32 @@ jQuery(function() {
 		}
 		return $html;		
 	}
+	
+// README HANDLING
+	add_action('admin_init','cfs_add_readme');
+
+	/**
+	 * Enqueue the readme function
+	 */
+	function cfs_add_readme() {
+		if(function_exists('cfreadme_enqueue')) {
+			cfreadme_enqueue('cf-advanced-search','cfs_readme');
+		}
+	}
+
+	/**
+	 * return the contents of the links readme file
+	 * replace the image urls with full paths to this plugin install
+	 *
+	 * @return string
+	 */
+	function cfs_readme() {
+		$file = realpath(dirname(__FILE__)).'/README.txt';
+		if(is_file($file) && is_readable($file)) {
+			$markdown = file_get_contents($file);
+			return $markdown;
+		}
+		return null;
+	}
 
 ?>

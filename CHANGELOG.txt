@@ -1,0 +1,12 @@
+# CF Advanced Search Changelog
+
+## 1.0
+
+- Initial release
+
+## 1.1
+
+- Fix WordPress 2.8 compatability bug
+- Add ability to filter categories from the search index via the WordPress admin
+- Improve the rebuild index JS feedback
+- Add documentation via the CF ReadMe enqueue API

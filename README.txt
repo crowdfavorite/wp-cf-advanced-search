@@ -30,3 +30,8 @@ To exclude a category of posts from being indexed:
 - Select the categories to be excluded from the list of categories in the Search Excludes section
 - Click "Save Excludes" to save the changes
 - **After the changes have been saved the search index must be rebuilt using the instructions above**
+
+
+### Developer Documentation
+
+Developer documentation is available from the file named `install.txt` that accompanies this plugin.
