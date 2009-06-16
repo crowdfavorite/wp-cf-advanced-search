@@ -1206,6 +1206,7 @@ jQuery(function() {
 		foreach($blogs as $blog) {
 			switch_to_blog($blog['blog_id']);
 			$categories = array_merge($categories,cfs_get_categories());
+			restore_current_blog();
 		}
 		restore_current_blog();
 		
