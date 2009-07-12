@@ -976,7 +976,6 @@ jQuery(function() {
 	 */
 	function cfs_build_search_sql(&$search) {
 		global $wpdb;
-		xdebug_break();
 		
 		//echo '<pre>',var_dump($search->params),'</pre>';
 		
