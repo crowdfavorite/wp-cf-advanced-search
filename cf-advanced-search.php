@@ -751,13 +751,14 @@ jQuery(function() {
 			dbg('cfs_index_post', 'error: missing post ID');
 			return;
 		}
-		
+	
 		// don't do anything on drafts or revisions
-		if ($post->post_type == 'revision' || $post->post_status == 'draft' || $post->post_parent != 0) {
+		//if ($post->post_type == 'revision' || $post->post_status == 'draft' || $post->post_parent != 0) { // post parent check is eliminating sub-pages
+		if ($post->post_type == 'revision' || $post->post_status == 'draft') {
 			dbg('cfs_index_post','error: post is a draft or revision');
 			return;
 		}
-		
+	
 		// start gathering post information, its a bit heavy but easier for applying filters later on
 		$postdata['ID'] = $post->ID;
 		$postdata['post_title'] = trim(strip_tags($post->post_title));
