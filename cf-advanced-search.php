@@ -907,9 +907,10 @@ jQuery(function() {
 	 * @return array
 	 */
 	function cfs_get_search_fields($defaults=false) {
+		global $wp_query;
 		$fields = array(
 			'start_row' => 0, 
-			'row_count' => 10, 
+			'row_count' => $wp_query->query_vars['posts_per_page'], 
 			'search_string' => '', 
 			'category_filter' => '', 
 			'author_filter' => '', 
@@ -924,7 +925,8 @@ jQuery(function() {
 			'author_exclude' => '',
 			'category_exclude' => '',
 			'tag_exclude' => '',
-			'global_search' => 0
+			'global_search' => 0,
+			'keyword_comparison' => 'or'
 		);
 		return $defaults ? $fields : array_keys($fields);
 	}
@@ -941,10 +943,9 @@ jQuery(function() {
 	function cfs_search_params() {
 		global $wp_query;
 		
-		$params = array();
-		$searchfields = cfs_get_search_fields();
+		$params = cfs_get_search_fields(true);
 	
-		foreach($searchfields as $f) {
+		foreach($params as $f => $v) {
 			// catch our search filters as IE work around
 			if ($f == 'search_tag' || $f == 'search_category' || $f == 'search_author' || $f == 'global_search') {
 				if (isset($_POST['cfs_'.$f]) || isset($_GET['cfs_'.$f])) {
@@ -961,13 +962,54 @@ jQuery(function() {
 				}
 			}
 		}
+		
 		// handle paginated query
 		if ($wp_query->is_paged && isset($_GET['s'])) {
 			$params['start_row'] = ($wp_query->query_vars['paged']-1) * $wp_query->query_vars['posts_per_page'];
-			$params['row_count'] = $wp_query->query_vars['posts_per_page'];
 		}
-	
+
 		return apply_filters('cfs_search_params',count($params) ? $params : null);
+	}
+
+	/**
+	 * Convert a search string to an array, honoring quotes as phrase delimiters
+	 *
+	 * @TODO better guesswork closing of open quotes?
+	 *
+	 * @param string $string 
+	 * @return array
+	 */
+	function cfs_search_string_to_array($string) {
+		$terms = array();
+
+		// ghetto solution: simply close an open quote at the end of the search string
+		// maybe this should strip out the last one found instead? I don't know.
+		if(substr_count($string,'"')%2) {
+			$string .= '"';
+		}
+		
+		// grab quoted strings
+		$n = preg_match_all('/(".*?")/',$string,$matches);
+		$terms = array_merge($terms,$matches[0]);
+		$string = preg_replace('/(".*?")/','',$string);
+		
+		// by default increase a quoted term's relevance
+		// don't modify it if a modifier has been supplied
+		foreach($terms as &$term) {
+			if($term[0] != '>' && $term[0] != '<') {
+				$term = '>'.$term;
+			}
+			$term = '('.$term.')';
+		}
+
+		// final extraction by space-delimination
+		$terms = array_merge($terms,explode(' ',$string));
+		
+		// trim & yank empty array elements
+		$terms = array_map('trim',$terms);
+		$terms = array_filter($terms);
+		
+		return $terms;
 	}
 	
 	/**
@@ -978,9 +1020,7 @@ jQuery(function() {
 	 */
 	function cfs_build_search_sql(&$search) {
 		global $wpdb;
-		
-		//echo '<pre>',var_dump($search->params),'</pre>';
-		
+
 		// global search toggles
 		if ($search->params['global_search'] > 0) {
 			$index_table = cfs_get_global_index_table();
@@ -993,6 +1033,7 @@ jQuery(function() {
 					post_name,
 					post_category,
 					post_excerpt,
+					"post" as post_type,
 					guid,
 					post_content,
 					categories,
@@ -1015,6 +1056,7 @@ jQuery(function() {
 					p.post_name,
 					p.post_category,
 					p.post_excerpt,
+					p.post_type,
 					p.guid,
 					p.comment_count,
 					p.post_content,
@@ -1028,6 +1070,26 @@ jQuery(function() {
 				";
 		}
 		
+		$args = array(
+			'', // search sql placeholder
+			'search_string', 	// relevancy categories
+			'search_string', 	// relevancy tags
+			'search_string', 	// relevancy title
+			'search_string', 	// relevancy content
+			'search_string', 	// relevancy authors
+			'search_string', 	// match categories
+			'search_string', 	// match tags
+			'search_string', 	// match title
+			'search_string', 	// match excerpt,long_excerpt, content
+			'search_string', 	// match authors
+			'category_filter', 	// match categories filter a
+			'category_filter', 	// match categories filter b
+			'author_filter', 	// match authors filter a
+			'author_filter', 	// match authors filter b
+			'tag_filter', 		// match tags filter a
+			'tag_filter' 		// match tags filter b
+		);
+
 		// sorting order
 		switch($search->params['sort_order']) {
 		
@@ -1041,111 +1103,84 @@ jQuery(function() {
 				$orderby = "relevancy_categories, relevancy_tags, relevancy_title desc, relevancy_content desc, relevancy_authors desc";
 				break;
 		}
-		
+
 		// build potential exclude lists
 		$excludes = '';
 		foreach(array('categories' => 'category_exclude', 'author' => 'author_exclude','tags' => 'tags_exclude') as $column => $exclude_type) {
 			if (isset($search->params[$exclude_type]) && !empty($search->params[$exclude_type])) {
-				$excludes .= 'and not match('.$column.') against(\''.$search->params[$exclude_type].'\' IN BOOLEAN MODE) ';
+				$extras .= 'and not match('.$column.') against(\''.$search->params[$exclude_type].'\' IN BOOLEAN MODE) ';
 			}
 		}
-		
-		// last chance for filters
-		$fields = apply_filters('cfas-search-fields',$fields,$search->params);
-		$from = apply_filters('cfas-search-from',$from,$search->params);
-		$excludes = apply_filters('cfas-search-where',$excludes,$search->params);
-		$orderby = apply_filters('cfas-search-orderby',$orderby,$search->params);
-		
-		// this search seems to liberal in the first where clause
-		$search->sql = trim("
-		
-			select SQL_CALC_FOUND_ROWS
-				{$fields}
-				match(categories) against (%s IN BOOLEAN MODE) as relevancy_categories,
-				match(tags) against (%s IN BOOLEAN MODE) as relevancy_tags,
-				match(title) against (%s IN BOOLEAN MODE) as relevancy_title,
-				match(excerpt,content) against (%s IN BOOLEAN MODE) as relevancy_content,
-				match(author) against (%s IN BOOLEAN MODE) as relevancy_authors
-			{$from}
-			where (
-					match(categories) against (%s IN BOOLEAN MODE) or
-					match(tags) against (%s IN BOOLEAN MODE) or
-					match(title) against (%s IN BOOLEAN MODE) or
-					match(excerpt,content) against (%s IN BOOLEAN MODE) or 
-					match(author) against (%s IN BOOLEAN MODE)
-				)
-				and (
-					('' = %s) or (match(categories) against (%s IN BOOLEAN MODE) > 0)
-				)
-				and (
-					('' = %s) or (match(author) against (%s IN BOOLEAN MODE) > 0)
-				)
-				and (
-					('' = %s) or (match(tags) against (%s IN BOOLEAN MODE) > 0)
-				)
-			{$excludes}
-			order by {$orderby}
-			limit %d, %d
-		
+
+		// handle keyword comparison operators
+		if(!empty($search->params['keyword_comparison']) && $search->params['keyword_comparison'] == 'or') {
+			// or comparisons, just a stub - no modifications needed
+		}
+		elseif(!empty($search->params['keyword_comparison']) && $search->params['keyword_comparison'] == 'and') {
+			// and comparisons
+			$terms = cfs_search_string_to_array($search->params['search_string']);
+			$ret = '';
+			foreach($terms as &$term) {
+				// honor any modifiers that users have already entered
+				if($term[0] != '+' && $term[0] != '-') {
+					$term = '+'.$term;
+				}
+			}
+			$search->params['search_string'] = implode(' ',$terms);
+		}
+		elseif(strpos($search->params['search_string'],'"') !== false) {
+			// simple quote handling?
+		}
+
+		$search->sql = trim("	
+select SQL_CALC_FOUND_ROWS
+	{$fields}
+	match(categories) against (%s IN BOOLEAN MODE) as relevancy_categories,
+	match(tags) against (%s IN BOOLEAN MODE) as relevancy_tags,
+	match(title) against (%s IN BOOLEAN MODE) as relevancy_title,
+	match(excerpt,content) against (%s IN BOOLEAN MODE) as relevancy_content,
+	match(author) against (%s IN BOOLEAN MODE) as relevancy_authors
+
+{$from}
+
+where (
+		match(categories) against (%s IN BOOLEAN MODE) or
+		match(tags) against (%s IN BOOLEAN MODE) or
+		match(title) against (%s IN BOOLEAN MODE) or
+		match(excerpt,content) against (%s IN BOOLEAN MODE) or 
+		match(author) against (%s IN BOOLEAN MODE)
+	)
+	and (
+		('' = %s) or (match(categories) against (%s IN BOOLEAN MODE) > 0)
+	)
+	and (
+		('' = %s) or (match(author) against (%s IN BOOLEAN MODE) > 0)
+	)
+	and (
+		('' = %s) or (match(tags) against (%s IN BOOLEAN MODE) > 0)
+	)
+	and p.ID is not null
+
+".trim($extras)."
+
+order by {$orderby}
+limit %d, %d
 		");
-
-		$search->params['search_string'] = str_replace(' ',',',trim($search->params['search_string']));
-
-
-		$match_categories = $match_author = $match_keyword = '';
-		$topic_filter = $author_filter = $keyword_filter = '';
-
-		// do category filtering
-		if ($search->params['category_filter'] !== '') {
-			$match_categories = $search->params['category_filter'];
-			$category_filter = $search->params['category_filter'];
-		}
-		else {
-			$match_categories = $search->params['search_string'];
-		}
-		
-		// modify match author based on UI choices
-		if ($search->params['author_filter'] !== '') {
-			$match_author = $search->params['author_filter'];
-			$author_filter = $search->params['author_filter'];
-		}
-		else {
-			$match_author = $search->params['search_string'];
+		// drop in the real values for argument array
+		foreach($args as &$arg) {
+			if(isset($search->params[$arg])) {
+				$arg = $search->params[$arg];
+			}
 		}
 
-		// tag filter
-		if ($search->params['tag_filter'] !== '') {
-			$match_tag = $search->params['tag_filter'];
-			$tag_filter = $search->params['tag_filter'];
-		}
-		else {
-			$match_tag = $search->params['search_string'];
-		}
-				
-		// apply search params
-		$search->sql_processed = $wpdb->prepare($search->sql,
-			$match_categories, 					// relevancy_categories
-			$match_tag, 						// relevancy_tags
-			$search->params['search_string'], 	// relevancy_title
-			$search->params['search_string'], 	// relevancy_content
-			$match_author,					 	// relevancy_authors
-			$match_categories,	 				// match(categories)
-			$match_tag, 						// match(tags)
-			$search->params['search_string'], 	// match(title)
-			$search->params['search_string'], 	// match(excerpt,content)
-			$match_author, 						// match(author)
-			$category_filter,					// '' = %s (topic)
-			$category_filter,					// or match(topic)
-			$author_filter,						// '' = %s (author)
-			$author_filter, 					// or match(author)
-			$tag_filter,				 		// '' = %s (tags)
-			$tag_filter,				 		// or match(tags)
-			$search->params['start_row'], 		// limit start
-			$search->params['row_count'] 		// limit amount
-		);
+		$args[] = $search->params['start_row'];	// limit start
+		$args[] = $search->params['row_count']; // limit row count
+		$args[0] = $search->sql;
+
+		// build sql
+		$search->sql_processed = call_user_func_array(array($wpdb,'prepare'),$args);
+
 	}
-
-	
 	
 // UTILS
 
@@ -1310,5 +1345,30 @@ jQuery(function() {
 		}
 		return $html;		
 	}
+	
+// Search Term Highlighting
+
+	/**
+	 * Add search term to peramlinks for in-post highlighting
+	 *
+	 * @param string $permalink 
+	 * @return string
+	 */
+	function cfs_search_term_in_permalink($permalink) {
+		// try to relegate to main body, this could still fire in the sidebar & nav...
+		if(defined('CFS_HIGHLIGHTSEARCH') && CFS_HIGHLIGHTSEARCH) {
+			$permalinks = get_option('permalink_structure');
+			$permalink .= ('' != $permalinks ? '?cfs_hl=' : '&cfs_hl').urlencode($_GET['s']);			
+		}
+		return $permalink;
+	}
+	add_filter('the_permalink','cfs_search_term_in_permalink',10);
+
+
+	function cfs_search_term_highlighting($the_content) {
+	
+		return $the_content;
+	}
+	add_filter('the_content','cfs_search_term_highlighting');
 
 ?>
