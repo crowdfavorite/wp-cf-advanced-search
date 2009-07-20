@@ -68,6 +68,7 @@ Author URI: http://crowdfavorite.com
 			// help out the query parsing to ensure our search is performed 
 			add_action('request','cfs_parse_query');		
 		}
+		
 	}
 
 // INIT
@@ -82,10 +83,24 @@ Author URI: http://crowdfavorite.com
 		 */
 		define('CFS_GLOBAL_SEARCH',apply_filters('cfs_do_global_search',false));
 
+		/**
+		 * Toggle search highlighting
+		 */
+		define('CFS_HIGHLIGHTSEARCH',apply_filters('cfs_do_search_highlight',true));
+		
+		if(CFS_HIGHLIGHTSEARCH) {
+			define('CFS_HIGHLIGHT_HASH_PREFIX',apply_filters('cfs_search_hightlight_hash_prefix','hl-'));
+			wp_enqueue_script('jquery-highlight','/index.php?cfs-search-js',array('jquery'),3);
+		}
+		
 		// deliver JS
 		if (isset($_GET['cfs-search-admin-js'])) { // deliver admin js
 			cfs_admin_js();
 			exit();
+		}
+		elseif(isset($_GET['cfs-search-js'])) {
+			cfs_js();
+			exit;
 		}
 	
 		if (function_exists('is_admin_page') && is_admin_page()) {
@@ -1356,19 +1371,45 @@ limit %d, %d
 	 */
 	function cfs_search_term_in_permalink($permalink) {
 		// try to relegate to main body, this could still fire in the sidebar & nav...
-		if(defined('CFS_HIGHLIGHTSEARCH') && CFS_HIGHLIGHTSEARCH) {
-			$permalinks = get_option('permalink_structure');
-			$permalink .= ('' != $permalinks ? '?cfs_hl=' : '&cfs_hl').urlencode($_GET['s']);			
+		if(defined('CFS_HIGHLIGHTSEARCH') && CFS_HIGHLIGHTSEARCH && is_search()) {		
+			// @TODO check GPC Magic Quotes here to see if we need to do this or not
+			$permalink .= '#'.CFS_HIGHLIGHT_HASH_PREFIX.rawurlencode(stripslashes($_GET['s']));
 		}
 		return $permalink;
 	}
-	add_filter('the_permalink','cfs_search_term_in_permalink',10);
+	add_filter('the_permalink','cfs_search_term_in_permalink',1000);
 
+	/**
+	 * Add javascript to search results page
+	 * currently only used to handle search highlighting
+	 *
+	 * @return void
+	 */
+	function cfs_js() {
+		header('Content-type: text/javascript');
+		if(CFS_HIGHLIGHTSEARCH) {
+			$js .= file_get_contents(WP_PLUGIN_DIR.'/cf-advanced-search/js/jquery.highlight.js');
+			$js .= '
+jQuery(function($){
+	if(window.location.hash && window.location.hash.match(/#'.CFS_HIGHLIGHT_HASH_PREFIX.'/)) {
+		var terms = decodeURIComponent(window.location.hash.replace("#'.CFS_HIGHLIGHT_HASH_PREFIX.'","")).split(\'"\');
 
-	function cfs_search_term_highlighting($the_content) {
-	
-		return $the_content;
+		$(terms).each(function(i){
+			if(this.length == 0 || this == "undefined") {
+				terms.splice(i,1); // remove this item
+			}
+			else {
+				//terms[i] = this.trim(); // trim whitespace, Safari does not like this for some reason
+				terms[i] = this.replace(/(^\s+|\s+$)/g, "");
+			}
+		});
+		$(".entry-content, .entry-title, .entry-summary").highlight(terms);
 	}
-	add_filter('the_content','cfs_search_term_highlighting');
+});
+			';
+		}
+		echo $js;
+	}
+	
 
 ?>
