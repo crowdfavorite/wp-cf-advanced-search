@@ -1,15 +1,13 @@
-# CF Advanced Search
+## CF Advanced Search
 
-This file will eventually become the README.txt for this plugin.   
-
-Tested on: WordPress 2.6
+Tested on: WordPress 2.6 - 2.8
 
 CF Advanced Search is a plugin that overrides the default WordPress search routine to give your WordPress site advanced search results and provide your users with greater control over searching your content. When Installed on WordPress MU the plugin can be configured to index all blogs to allow for multi-blog search results. This plugin does not create a new search results page but rather opts to use the default WordPress search results layout and pagination. The default WordPress method of performing a search, `?s=search_term`, is still used. This enables the plugin to drop in to any existing theme that has used the default WordPress in its design.
 
 
 ---
 
-## Standard WordPress Installation
+### Standard WordPress Installation
 
 If your site uses the standard WordPress theme structure:
 
@@ -31,7 +29,7 @@ If your site uses the standard WordPress theme structure:
 
 ---
 
-## Carrington Installation
+### Carrington Installation
 
 If your site uses the Carrington theme framework:
 
@@ -51,7 +49,7 @@ If your site uses the Carrington theme framework:
 
 ---
 
-## Search Indexes
+### Search Indexes
 
 The initial search index must be built manually. Automated processes can cause too much server overhead and doing a manual update allows more control over the creation of the search indexes in small, manageable batches.
 
@@ -62,7 +60,7 @@ After the initial build it should not be necessary to manually manage the search
 
 ---
 
-## Search Results
+### Search Results
 
 When active, the plugin overrides the default WordPress search query with a new one that uses the newly built search indexes. The results are still shown in the default manner on the default search results page. 
 
@@ -131,7 +129,7 @@ Here we put the conditional no-results include above the include for the advance
 	
 ---
 
-## Global Search
+### Global Search
 
 Global search enables a global search index for an entire WordPress MU install. Global search will not turn on if it does not detect WordPress MU. Global Search must be enabled for each site that is to be included in the global search index. If a site is added to the global index AFTER is has performed its first search index build then the indexes must be rebuilt to add all the indexed content to the global search index. As with the regular search index this index is managed automatically with the built in WordPress post/page save, edit and delete functionality. The only reason to rebuild the indexes would be if post/page content was edited programmatically and not using the default WordPress post save functionality.
 
@@ -156,11 +154,11 @@ Global Search must be turned on explicitly and a filter is provided to enable th
 
 ---
 
-## Search Filters
+### Search Filters
 
 Searches can be modified to focus on specific categories, authors, or try to match extra keywords against post tags. Searches can also be modified to exclude by those same criteria.
 
-### Filters
+#### Filters
 
 Filters can be used to narrow search results to the applied filters. For example: to perform a search only in the 'newsletters' category a parameter of `cfs_category_filter="newsletters"` should be passed to the search. Multiple filters can be applied to a single search.
 
@@ -177,7 +175,7 @@ Available filters are:
 		<option value="reports">Special Reports</option>
 	</select>
 
-### Excludes
+#### Excludes
 
 Excludes can be used to exclude information from search results. For example: to exclude anything in the `sweaters` category a parameter of `cfs_category_exclude="sweaters"` should be passed to the search. Multiple excludes can be applied to a single search. The search exclude is not secure as it still uses in page form data and GET variables to do the exclusion. If data needs to be secure and non-searchable it should be excluded from the search indexing.
 

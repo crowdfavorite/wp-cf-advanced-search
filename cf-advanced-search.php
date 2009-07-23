@@ -1359,6 +1359,36 @@ limit %d, %d
 		return $html;		
 	}
 	
+// Readme
+
+	add_action('admin_init','cfs_add_readme');
+
+	/**
+	 * Enqueue the readme function
+	 */
+	function cfs_add_readme() {
+		if(function_exists('cfreadme_enqueue')) {
+			cfreadme_enqueue('cfs-readme','cfs_readme');
+		}
+	}
+
+	/**
+	 * return the contents of the links readme file
+	 * replace the image urls with full paths to this plugin install
+	 *
+	 * @return string
+	 */
+	function cfs_readme() {
+		$file = realpath(dirname(__FILE__)).'/install.txt';
+		if(is_file($file) && is_readable($file)) {
+			$markdown = file_get_contents($file);
+			$markdown = preg_replace('|!\[(.*?)\]\((.*?)\)|','![$1]('.WP_PLUGIN_URL.'/cf-links/readme/$2)',$markdown);
+			return $markdown;
+		}
+		return null;
+	}
+	
+	
 // Search Term Highlighting
 
 	/**
