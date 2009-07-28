@@ -91,15 +91,20 @@ Author URI: http://crowdfavorite.com
 		if(CFS_HIGHLIGHTSEARCH) {
 			define('CFS_HIGHLIGHT_HASH_PREFIX',apply_filters('cfs_search_hightlight_hash_prefix','hl-'));
 			wp_enqueue_script('jquery-highlight','/index.php?cfs-search-js',array('jquery'),3);
+			wp_enqueue_style('cfs-search-box','/index.php?cfs-search-css',array(),1,'screen');
 		}
 		
-		// deliver JS
-		if (isset($_GET['cfs-search-admin-js'])) { // deliver admin js
+		// deliver externals
+		if (isset($_GET['cfs-search-admin-js'])) {
 			cfs_admin_js();
 			exit();
 		}
 		elseif(isset($_GET['cfs-search-js'])) {
 			cfs_js();
+			exit;
+		}
+		elseif(isset($_GET['cfs-search-css'])) {
+			cfs_css();
 			exit;
 		}
 	
@@ -1420,23 +1425,174 @@ limit %d, %d
 			$js .= '
 jQuery(function($){
 	if(window.location.hash && window.location.hash.match(/#'.CFS_HIGHLIGHT_HASH_PREFIX.'/)) {
+		// do highlight
 		var terms = decodeURIComponent(window.location.hash.replace("#'.CFS_HIGHLIGHT_HASH_PREFIX.'","")).split(\'"\');
-
+		
 		$(terms).each(function(i){
 			if(this.length == 0 || this == "undefined") {
 				terms.splice(i,1); // remove this item
 			}
 			else {
-				//terms[i] = this.trim(); // trim whitespace, Safari does not like this for some reason
 				terms[i] = this.replace(/(^\s+|\s+$)/g, "");
 			}
 		});
 		$(".entry-content, .entry-title, .entry-summary").highlight(terms);
+		
+		// search bar
+		searchbar = $("<div>").attr("id","cfs-search-bar");
+		$("<span>").attr("id","cfs-search-cancel").append($("<a>").attr("href","3").html("close").click(function(){
+			$(".entry-content, .entry-title, .entry-summary").unhighlight();
+			$("#cfs-search-bar").hide();
+			$("body,html").removeClass("cfs-search");
+			return false;
+		})).appendTo(searchbar);
+		$("<span>").html("<b>Search:</b>").appendTo(searchbar);
+		$("<button>").attr("id","cfs-search-previous").html("&laquo; Previous").click(function(){
+			cfs_next_highlight("prev");
+			return false;
+		}).appendTo(searchbar);
+		$("<button>").attr("id","cfs-search-next").html("Next &raquo;").click(function(){
+			cfs_next_highlight("next");
+			return false;
+		}).appendTo(searchbar);
+		$("<span>").attr("id","cfs-search-notice").appendTo(searchbar);
+		$("body").addClass("cfs-search").prepend(searchbar);
+		
+		highlighted_items = $(".highlight");
+		$(highlighted_items[0]).attr("id","highlight-active")
+		current_highlight = 0;
+				
+		function cfs_next_highlight(dir) {
+			if(dir == "next" || dir == "prev") {		
+				var next_highlight = dir == "next" ? parseInt(current_highlight)+1 : parseInt(current_highlight)-1;
+
+				var _this = $(highlighted_items[current_highlight]);
+				var _next = $(highlighted_items[next_highlight]);
+				
+				if (dir == "next" && !_next.hasClass("highlight")) { 
+					$("#cfs-search-notice").html("No more results. You are at the last item.");
+				}
+				else if (dir == "prev" && !_next.hasClass("highlight")) {
+					$("#cfs-search-notice").html("No more results. You are at the first item.");
+				}
+				else {
+					$("#cfs-search-notice").html("");
+					_this.attr("id","");
+					_next.attr("id","highlight-active");
+					if(dir == "next") {
+						current_highlight++;
+					}
+					else {
+						current_highlight--;
+					}
+					// safari reports absolute position, everyone else reports relative
+
+					$("body,html").animate({ scrollTop: _next.offset().top-100 });
+					//$("body,html").animate({ scrollTop:"+=" + (_next.offset().top-100) + "px" });	
+				}
+			}
+			return;
+		}
 	}
 });
 			';
 		}
 		echo $js;
+	}
+	
+	function cfs_css() {
+		header('Content-type: text/css');
+		
+		$header_gradient_base64 = 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAkCAMAAAC3xkroAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAEtQTFRF3Nzc6enp4+Pj4ODg7Ozs7+/v2NjY7+/v2dnZ5eXl5ubm39/f3t7e5+fn7u7u4uLi7e3t3d3d6urq2tra5OTk4eHh6+vr29vb6OjoozrPHwAAAGlJREFUeNpkyAkOwjAMRNGhoKRN0p3t/ifFFCHQnydLtr8yaHrLU445zk/4owU8XEB38LCBhxPoCR5GUBnL74tHBTSAruChA83g4QYezqAKarXVmPbdaqAVPJgHeNjBQ+pTH5MOcbwEGABy/iBtDF/dCwAAAABJRU5ErkJggg==';
+		
+		$highlight_gradient_base64 = 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAYCAMAAADqO6ysAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAEhQTFRF/PWu+ON49ddS9dpd/POo+++b/fez88019dNJ+/Gi8cgj8cYb9+Bv/fi4+umL++yT8MQT778I9NA/78EM9t1m+eaC7r4G8sotyrFsAAAAADxJREFUeNocwQcSgCAAwLC6EAcgzv//lJ4JSQTxG8UiJlFEFo/oxC5uMYheRHGKWXxiFZs4xCWqeNUEGADYpARRkbkfzAAAAABJRU5ErkJggg==';
+		
+		$lt_gray = '#ccc';
+		$dk_gray = '#555';
+		$height = 33;
+		$highlight_h_padding = '4px';
+		$highlight_v_padding = '2px';
+		
+		$css = '
+body.cfs-search {
+	margin-top: '.$height.'px;
+}
+#cfs-search-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	margin: 0;
+	padding: 6px 10px 0 10px;
+	width: 100%;
+	height: '.($height-6).'px;
+	background: #ccc url(data:image/png;base64,'.$header_gradient_base64.') top left repeat-x;
+	border-top: 1px solid '.$st_gray.';
+	border-bottom: 1px solid '.$dk_gray.';
+	z-index: 9999;
+	overflow: hidden;
+}
+#cfs-search-bar > * {
+	margin: 0;
+	padding: 0;
+}
+#cfs-search-bar button {
+	background: #eee;
+	border: 1px solid #bbb;
+	padding: 3px;
+	margin-left: 10px;
+	cursor: pointer;
+	border-radius:5px;
+	-webkit-border-radius:5px;
+	-moz-border-radius:5px;
+	-khtml-border-radius:5px;
+	font-weight: bold;
+}
+#cfs-search-bar button:hover {
+	border-color: #777;
+}
+#cfs-search-bar button:active {
+	background-color: #ccc;
+}
+#cfs-search-bar span {
+	color: black;
+}
+#cfs-search-notice {
+	margin-left: 10px;
+}
+#cfs-search-cancel {
+	float: right;
+	margin: 0 20px 0 0;
+}
+span.highlight {
+	background-color: #fdf8b8;
+	padding: '.$highlight_v_padding.' '.$highlight_h_padding.';
+	margin: 0 -'.$highlight_h_padding.';
+	border: 1px solid '.$lt_gray.';
+	border-radius:3px;
+	-webkit-border-radius:3px;
+	-moz-border-radius:3px;
+	-khtml-border-radius:3px;
+	white-space: nowrap;
+}
+span#highlight-active {
+	background: #eebe06 url(data:image/png;base64,'.$highlight_gradient_base64.') top left repeat-x;
+}
+';
+
+$one = '
+* {
+	margin: 0;
+}
+html, body {
+	height: 100%;
+	overflow: auto;
+}
+* html #cfs-search-bar {
+	position: absolute;
+}
+		';
+		
+		echo trim($css);
 	}
 	
 
