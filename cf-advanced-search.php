@@ -1555,10 +1555,15 @@ body.cfs-search {
 #cfs-search-bar-inside {
 	padding:0 20px;
 }
-#cfs-search-bar a {
+#cfs-search-bar a,
+#cfs-search-bar a:visited{
+	color:#000;
+	font-weight: bold;
+}
+a#cfs-search-previous,
+a#cfs-search-next {
 	background: #eee;
 	border: 1px solid #bbb;
-	color:#000;
 	padding: 3px;
 	margin-left: 10px;
 	cursor: pointer;
@@ -1566,12 +1571,13 @@ body.cfs-search {
 	-webkit-border-radius:5px;
 	-khtml-border-radius:5px;
 	border-radius:5px;
-	font-weight: bold;
 }
-#cfs-search-bar a:hover {
+a#cfs-search-previous:hover,
+a#cfs-search-next:hover {
 	border-color: #777;
 }
-#cfs-search-bar a:active {
+a#cfs-search-previous:active,
+a#cfs-search-next:active {
 	background-color: #ccc;
 }
 #cfs-search-bar span {
