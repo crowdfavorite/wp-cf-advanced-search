@@ -1440,10 +1440,10 @@ jQuery(function($){
 		
 		// search bar
 		searchbar = $("<div id=\'cfs-search-bar\'></div>");
-		$("<span>").attr("id","cfs-search-cancel").append($("<a>").attr("href","3").html("close").click(function(){
+		$("<span id=\'cfs-search-cancel\' />").append($("<a href=\'3\'>close</a>").click(function(){
 			$(".entry-content, .entry-title, .entry-summary").unhighlight();
 			$("#cfs-search-bar").hide();
-			$("body,html").removeClass("cfs-search");
+			$("body").removeClass("cfs-search");
 			return false;
 		})).appendTo(searchbar);
 		$("<b>Search:</b>").appendTo(searchbar);
@@ -1455,13 +1455,13 @@ jQuery(function($){
 			cfs_next_highlight("next");
 			return false;
 		}).appendTo(searchbar);
-		$("<span id=\'cfs-search-notice\'>").appendTo(searchbar);
+		$("<span id=\'cfs-search-notice\' />").appendTo(searchbar);
 		searchbar.wrapInner(\'<div id="cfs-search-bar-inside">\');
 		
 		$("body").addClass("cfs-search").prepend(searchbar);
 		
 		// Fix this thing to the viewport if it is IE.
-		if($.browser.msie) {
+		if($.browser.msie && $.browser.version < 7.0) {
 			function cfasFixSearchBarToViewPortInIE() {
 				$(searchbar).css({
 					"position": "absolute",
