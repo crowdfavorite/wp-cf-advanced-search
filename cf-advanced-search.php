@@ -1439,14 +1439,14 @@ jQuery(function($){
 		$(".entry-content, .entry-title, .entry-summary").highlight(terms);
 		
 		// search bar
-		searchbar = $("<div id=\'cfs-search-bar\' />");
+		searchbar = $("<div id=\'cfs-search-bar\'></div>");
 		$("<span>").attr("id","cfs-search-cancel").append($("<a>").attr("href","3").html("close").click(function(){
 			$(".entry-content, .entry-title, .entry-summary").unhighlight();
 			$("#cfs-search-bar").hide();
 			$("body,html").removeClass("cfs-search");
 			return false;
 		})).appendTo(searchbar);
-		$("<span><b>Search:</b></span>").appendTo(searchbar);
+		$("<b>Search:</b>").appendTo(searchbar);
 		$("<a id=\'cfs-search-previous\'>&laquo; Previous</a>").click(function(){
 			cfs_next_highlight("prev");
 			return false;
@@ -1456,6 +1456,8 @@ jQuery(function($){
 			return false;
 		}).appendTo(searchbar);
 		$("<span id=\'cfs-search-notice\'>").appendTo(searchbar);
+		searchbar.wrapInner(\'<div id="cfs-search-bar-inside">\');
+		
 		$("body").addClass("cfs-search").prepend(searchbar);
 		
 		// Fix this thing to the viewport if it is IE.
@@ -1547,6 +1549,9 @@ body.cfs-search {
 	margin: 0;
 	padding: 0;
 }
+#cfs-search-bar-inside {
+	padding:0 20px;
+}
 #cfs-search-bar a {
 	background: #eee;
 	border: 1px solid #bbb;
@@ -1574,7 +1579,6 @@ body.cfs-search {
 }
 #cfs-search-cancel {
 	float: right;
-	margin: 0 20px 0 0;
 }
 span.highlight {
 	background-color: #fdf8b8;
