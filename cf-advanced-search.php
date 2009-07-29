@@ -1439,24 +1439,36 @@ jQuery(function($){
 		$(".entry-content, .entry-title, .entry-summary").highlight(terms);
 		
 		// search bar
-		searchbar = $("<div>").attr("id","cfs-search-bar");
+		searchbar = $("<div id=\'cfs-search-bar\' />");
 		$("<span>").attr("id","cfs-search-cancel").append($("<a>").attr("href","3").html("close").click(function(){
 			$(".entry-content, .entry-title, .entry-summary").unhighlight();
 			$("#cfs-search-bar").hide();
 			$("body,html").removeClass("cfs-search");
 			return false;
 		})).appendTo(searchbar);
-		$("<span>").html("<b>Search:</b>").appendTo(searchbar);
-		$("<button>").attr("id","cfs-search-previous").html("&laquo; Previous").click(function(){
+		$("<span><b>Search:</b></span>").appendTo(searchbar);
+		$("<a id=\'cfs-search-previous\'>&laquo; Previous</a>").click(function(){
 			cfs_next_highlight("prev");
 			return false;
 		}).appendTo(searchbar);
-		$("<button>").attr("id","cfs-search-next").html("Next &raquo;").click(function(){
+		$("<a id=\'cfs-search-next\'>Next &raquo;</a>").click(function(){
 			cfs_next_highlight("next");
 			return false;
 		}).appendTo(searchbar);
-		$("<span>").attr("id","cfs-search-notice").appendTo(searchbar);
+		$("<span id=\'cfs-search-notice\'>").appendTo(searchbar);
 		$("body").addClass("cfs-search").prepend(searchbar);
+		
+		// Fix this thing to the viewport if it is IE.
+		if($.browser.msie) {
+			function cfasFixSearchBarToViewPortInIE() {
+				$(searchbar).css({
+					"position": "absolute",
+					"top": $(window).scrollTop() + "px"
+				});
+			}
+			cfasFixSearchBarToViewPortInIE();
+			$(window).scroll(cfasFixSearchBarToViewPortInIE);
+		}
 		
 		highlighted_items = $(".highlight");
 		$(highlighted_items[0]).attr("id","highlight-active")
@@ -1518,39 +1530,40 @@ body.cfs-search {
 	margin-top: '.$height.'px;
 }
 #cfs-search-bar {
-	position: fixed;
-	top: 0;
-	left: 0;
-	margin: 0;
-	padding: 6px 10px 0 10px;
-	width: 100%;
-	height: '.($height-6).'px;
 	background: #ccc url(data:image/png;base64,'.$header_gradient_base64.') top left repeat-x;
 	border-top: 1px solid '.$st_gray.';
 	border-bottom: 1px solid '.$dk_gray.';
-	z-index: 9999;
+	height: '.$height.'px;
+	left: 0;
+	line-height: '.$height.'px;
+	margin: 0;
 	overflow: hidden;
+	position: fixed;
+	top: 0;
+	width: 100%;
+	z-index: 9999;
 }
-#cfs-search-bar > * {
+#cfs-search-bar * {
 	margin: 0;
 	padding: 0;
 }
-#cfs-search-bar button {
+#cfs-search-bar a {
 	background: #eee;
 	border: 1px solid #bbb;
+	color:#000;
 	padding: 3px;
 	margin-left: 10px;
 	cursor: pointer;
-	border-radius:5px;
-	-webkit-border-radius:5px;
 	-moz-border-radius:5px;
+	-webkit-border-radius:5px;
 	-khtml-border-radius:5px;
+	border-radius:5px;
 	font-weight: bold;
 }
-#cfs-search-bar button:hover {
+#cfs-search-bar a:hover {
 	border-color: #777;
 }
-#cfs-search-bar button:active {
+#cfs-search-bar a:active {
 	background-color: #ccc;
 }
 #cfs-search-bar span {
