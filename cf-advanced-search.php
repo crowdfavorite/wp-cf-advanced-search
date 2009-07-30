@@ -997,10 +997,16 @@ jQuery(function() {
 	 * @TODO better guesswork closing of open quotes?
 	 *
 	 * @param string $string 
+	 * @param bool $search_optimized - if set to false no search augmented parameters are added
 	 * @return array
 	 */
-	function cfs_search_string_to_array($string) {
+	function cfs_search_string_to_array($string,$search_optimized=true) {
 		$terms = array();
+		
+		// handle slashes
+		if(!get_magic_quotes_gpc()) {
+			$string = stripslashes($string);
+		}
 
 		// ghetto solution: simply close an open quote at the end of the search string
 		// maybe this should strip out the last one found instead? I don't know.
@@ -1015,13 +1021,15 @@ jQuery(function() {
 		
 		// by default increase a quoted term's relevance
 		// don't modify it if a modifier has been supplied
-		foreach($terms as &$term) {
-			if($term[0] != '>' && $term[0] != '<') {
-				$term = '>'.$term;
+		if($search_optimized) {
+			foreach($terms as &$term) {
+				if($term[0] != '>' && $term[0] != '<') {
+					$term = '>'.$term;
+				}
+				$term = '('.$term.')';
 			}
-			$term = '('.$term.')';
 		}
-
+		
 		// final extraction by space-delimination
 		$terms = array_merge($terms,explode(' ',$string));
 		
@@ -1405,8 +1413,13 @@ limit %d, %d
 	function cfs_search_term_in_permalink($permalink) {
 		// try to relegate to main body, this could still fire in the sidebar & nav...
 		if(defined('CFS_HIGHLIGHTSEARCH') && CFS_HIGHLIGHTSEARCH && is_search()) {		
-			// @TODO check GPC Magic Quotes here to see if we need to do this or not
-			$permalink .= '#'.CFS_HIGHLIGHT_HASH_PREFIX.rawurlencode(stripslashes($_GET['s']));
+			$terms = cfs_search_string_to_array($_GET['s'],false);
+			foreach($terms as &$term) {
+				if(strpos($term,'"') !== false) {
+					$term = urlencode($term);
+				}
+			}
+			$permalink .= '#'.CFS_HIGHLIGHT_HASH_PREFIX.implode('+',$terms);
 		}
 		return $permalink;
 	}
@@ -1426,61 +1439,66 @@ limit %d, %d
 jQuery(function($){
 	if(window.location.hash && window.location.hash.match(/#'.CFS_HIGHLIGHT_HASH_PREFIX.'/)) {
 		// do highlight
-		var terms = decodeURIComponent(window.location.hash.replace("#'.CFS_HIGHLIGHT_HASH_PREFIX.'","")).split(\'"\');
-		
-		$(terms).each(function(i){
-			if(this.length == 0 || this == "undefined") {
-				terms.splice(i,1); // remove this item
-			}
-			else {
-				terms[i] = this.replace(/(^\s+|\s+$)/g, "");
+		var cfs_terms_pre = unescape(window.location.hash.replace("#'.CFS_HIGHLIGHT_HASH_PREFIX.'","")).split(/(".*?"|\+)/g);
+		cfs_terms = [];
+		$(cfs_terms_pre).each(function(i) {
+			if(this.length != 0 && this != undefined && this != "+") {
+				cfs_terms.push(this.replace(/(\\")/g,"").replace(/(^\s+|\s+$|\+)/g," "));
 			}
 		});
-		$(".entry-content, .entry-title, .entry-summary").highlight(terms);
+		$(".entry-content, .entry-title, .entry-summary").highlight(cfs_terms);
 		
 		// search bar
-		searchbar = $("<div id=\'cfs-search-bar\'></div>");
+		cfs_searchbar = $("<div id=\'cfs-search-bar\'></div>");
 		$("<span id=\'cfs-search-cancel\' />").append($("<a href=\'3\'>close</a>").click(function(){
 			$(".entry-content, .entry-title, .entry-summary").unhighlight();
 			$("#cfs-search-bar").hide();
 			$("body").removeClass("cfs-search");
 			return false;
-		})).appendTo(searchbar);
-		$("<b>Search:</b>").appendTo(searchbar);
+		})).appendTo(cfs_searchbar);
+		$("<b>Search:</b>").appendTo(cfs_searchbar);
 		$("<a id=\'cfs-search-previous\'>&laquo; Previous</a>").click(function(){
 			cfs_next_highlight("prev");
 			return false;
-		}).appendTo(searchbar);
+		}).appendTo(cfs_searchbar);
 		$("<a id=\'cfs-search-next\'>Next &raquo;</a>").click(function(){
 			cfs_next_highlight("next");
 			return false;
-		}).appendTo(searchbar);
-		$("<span id=\'cfs-search-notice\' />").appendTo(searchbar);
-		searchbar.wrapInner(\'<div id="cfs-search-bar-inside">\');
+		}).appendTo(cfs_searchbar);
+		$("<span id=\'cfs-search-notice\' />").appendTo(cfs_searchbar);
+		cfs_searchbar.wrapInner(\'<div id="cfs-search-bar-inside">\');
 		
-		$("body").addClass("cfs-search").prepend(searchbar);
+		$("body").addClass("cfs-search").prepend(cfs_searchbar);
 		
 		// Fix this thing to the viewport if it is IE.
 		if($.browser.msie && $.browser.version < 7.0) {
-			function cfasFixSearchBarToViewPortInIE() {
-				$(searchbar).css({
+			function cfsFixSearchBarToViewPortInIE() {
+				$(cfs_searchbar).css({
 					"position": "absolute",
 					"top": $(window).scrollTop() + "px"
 				});
 			}
-			cfasFixSearchBarToViewPortInIE();
-			$(window).scroll(cfasFixSearchBarToViewPortInIE);
+			cfsFixSearchBarToViewPortInIE();
+			$(window).scroll(cfsFixSearchBarToViewPortInIE);
 		}
 		
 		highlighted_items = $(".highlight");
 		$(highlighted_items[0]).attr("id","highlight-active")
-		current_highlight = 0;
-				
+		cfs_current_highlight = 0;
+
+		// opera fix for scrolling
+		if($.browser.opera) {
+			cfs_scroll_tgt = "html";
+		}
+		else {
+			cfs_scroll_tgt = "body,html";
+		}
+
 		function cfs_next_highlight(dir) {
 			if(dir == "next" || dir == "prev") {		
-				var next_highlight = dir == "next" ? parseInt(current_highlight)+1 : parseInt(current_highlight)-1;
+				var next_highlight = dir == "next" ? parseInt(cfs_current_highlight)+1 : parseInt(cfs_current_highlight)-1;
 
-				var _this = $(highlighted_items[current_highlight]);
+				var _this = $(highlighted_items[cfs_current_highlight]);
 				var _next = $(highlighted_items[next_highlight]);
 				
 				if (dir == "next" && !_next.hasClass("highlight")) { 
@@ -1494,15 +1512,13 @@ jQuery(function($){
 					_this.attr("id","");
 					_next.attr("id","highlight-active");
 					if(dir == "next") {
-						current_highlight++;
+						cfs_current_highlight++;
 					}
 					else {
-						current_highlight--;
+						cfs_current_highlight--;
 					}
-					// safari reports absolute position, everyone else reports relative
 
-					$("body,html").animate({ scrollTop: _next.offset().top-100 });
-					//$("body,html").animate({ scrollTop:"+=" + (_next.offset().top-100) + "px" });	
+					$(cfs_scroll_tgt).animate({ scrollTop: _next.offset().top-100 });
 				}
 			}
 			return;
