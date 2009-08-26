@@ -108,15 +108,38 @@ Author URI: http://crowdfavorite.com
 			exit;
 		}
 	
-		if (function_exists('is_admin_page') && is_admin_page()) {
+		if (function_exists('is_admin_page') && is_admin_page() && strtolower($_SERVER['REQUEST_METHOD']) == 'post') {
 			// rebuild database indexes
-			if (isset($_POST['cfs_rebuild_indexes']) && isset($_POST['cfs_batch_offset'])) {
-				cfs_batch_reindex();
-				exit();
-			}
-			else if (isset($_POST['cfs_rebuild_indexes']) && isset($_POST['cfs_create_table_index'])) {
-				cfs_build_batch_index();
-				exit();
+			// if (isset($_POST['cfs_rebuild_indexes']) && isset($_POST['cfs_batch_offset'])) {
+			// 	cfs_batch_reindex();
+			// 	exit();
+			// }
+			// else if (isset($_POST['cfs_rebuild_indexes']) && isset($_POST['cfs_create_table_index'])) {
+			// 	cfs_build_batch_index();
+			// 	exit();
+			// }
+			
+			switch(true) {
+				case isset($_POST['cfs_rebuild_indexes']):
+					// batch re-index single blog
+					if (isset($_POST['cfs_batch_offset'])) {
+						cfs_batch_reindex();
+					}
+					elseif (isset($_POST['cfs_create_table_index'])) {
+						cfs_build_batch_index();
+					}
+					exit;
+					break;
+				case isset($_POST['cfs_prune_global_index']):
+					// prune global posts table of inactive blog posts
+					if(isset($_POST['cfs_rebuild_global_index'])) {
+						cfs_rebuild_global_index();
+					}
+					else {
+						cfs_prune_global_index();
+					}
+					exit;
+					break;
 			}
 		}
 	}
@@ -290,9 +313,14 @@ Author URI: http://crowdfavorite.com
 	function cfs_admin() {
 		echo '
 				<div class="wrap cfs_wrap">
-					<h2>Advanced Search Admin</h2>
+					';
+		if(function_exists('screen_icon')) {
+			screen_icon();
+		}		
+		echo '<h2>Advanced Search Admin</h2>
 			';
 		cfs_rebuild_index_form();
+		cfs_prune_global_index_form();
 		echo '
 				</div>
 			';
@@ -318,22 +346,60 @@ Author URI: http://crowdfavorite.com
 						<li><strong>Indexed Posts:</strong> <span id="cfs_num_rows">'.$status->Rows.'</span></li>
 					</ul>
 				</div>
-				<h3>Rebuild Search Index</h3>
+				<h4>Rebuild Search Index</h4>
 				<p>Rebuild indexes. This can take a while with large numbers of posts.</p>
-				<div id="index-status"><p id="index-status-update"></p></div>
+				<div id="index-status"><p class="index-status-update"></p></div>
 				<form id="cfs_rebuild_indexes_form" method="post" action="" onsubmit="return false;">
-					<p class="submit"><input type="submit" name="cfs_rebuild_indexes" value="Rebuild Index"></p>
+					<p class="submit"><input type="submit" name="cfs_rebuild_indexes" value="Rebuild Index" class="button-primary" /></p>
 				</form>
+			';
+	}
+	
+	/**
+	 * Show global search prune button
+	 * only show if 
+	 *
+	 * @return void
+	 */
+	function cfs_prune_global_index_form() {
+		if(!CFS_GLOBAL_SEARCH || (CFS_GLOBAL_SEARCH && !is_main_blog())) { return; }		
+		
+		$status = cfs_global_index_table_status();
+		echo '
+			<h3>Global Search Index</h3>
+			<div id="cfs-global-index-info">
+				<ul class="index-info">
+					<li><strong>Last Full Index:</strong> <span id="cfs_global_create_time">'.$status->Create_time.'</span></li>
+					<li><strong>Last Update (post insert):</strong> <span id="cfs_global_update_time">'.$status->Update_time.'</span></li>
+					<li><strong>Indexed Posts:</strong> <span id="cfs_global_num_rows">'.$status->Rows.'</span></li>
+					<li><strong>Blogs Indexed:</strong> <span id="cfs_global_num_blogs">'.$status->Blogs.'</span></li>
+				</ul>
+			</div>
+			
+			<h4>Prune Global Search Index</h4>
+			<p>In the case that a blog is deactivated, archived or deleted its posts need to be removed from the global search index. Due to the potential run time of that kind of process it cannot be done automatically. If you delete a blog use the button below to prune the global search index of all posts from blogs that are not active.</p>
+			<div id="prune-status"><p class="index-status-update"></p></div>
+			<form id="cfs_prune_global_index_form" method="post" action="" onsubmit="return false;">
+				<p class="submit"><input type="submit" name="cfs_prune_global_index" value="Prune Global Index" class="button-primary" /></p>
+			</form>
 			';
 	}
 	
 	/**
 	 * Get some stats on the index table
 	 */
-	function cfs_index_table_status() {
+	function cfs_index_table_status($global = false) {
 		global $wpdb;
-		$index_table = cfs_get_index_table();
+		$index_table = $global ? cfs_get_global_index_table() : cfs_get_index_table();
 		return $wpdb->get_row("SHOW TABLE STATUS LIKE '{$index_table}'");
+	}
+	
+	function cfs_global_index_table_status() {
+		global $wpdb;
+		$status = cfs_index_table_status(true);
+		$index_table = cfs_get_global_index_table();
+		$status->Blogs = $wpdb->query("SELECT blog_id, count(blog_id) FROM cfs_global_document_index GROUP BY blog_id");
+		return $status;
 	}
 	
 	/**
@@ -342,77 +408,129 @@ Author URI: http://crowdfavorite.com
 	function cfs_admin_js() {
 		header('Content-type: text/javascript');
 		?>
-jQuery(function() {
+jQuery(function($) {
 
-	jQuery('#cfs_rebuild_indexes_form input[type="submit"]').click(function(){
+// global index prune
+	$('#cfs_prune_global_index_form input[type="submit"]').click(function(){
+		cfs_prune_global_index();
+		return false;
+	});
+
+	cfs_prune_global_index = function() {
+		cfs_fade_info_display(.3,true);
+		cfs_update_status('Pruning posts',false,true);
+		cfs_prune_global_index_posts();
+	}
+	
+	cfs_prune_global_index_posts = function() {
+		$.post('index.php',{'cfs_prune_global_index':1},function(r){
+			if (!r.result && !r.finished) {
+				if (r.message) { 
+					msg = r.message;
+				}
+				else {
+					msg = 'Fatal Error. Please contact the system administrator.';
+				}
+				cfs_update_status('<b>Post pruning failed!</b> Server said: ' + msg,false,true);
+				return;
+			}
+			else if (r.finished) {
+				cfs_update_status('Updating Index. Almost Done&hellip;',false,true);
+				setTimeout(cfs_rebuild_global_index,500);
+			}
+		},'json');
+	}
+
+	cfs_rebuild_global_index = function() {
+		$.post('index.php',{'cfs_prune_global_index':1,'cfs_rebuild_global_index':1},function(r){
+			if (r.result) {
+				var change = parseInt($('#cfs_global_num_blogs').html()) - parseInt(r.num_blogs);
+				var message = 'Global Post Pruning Complete. <b>' + change + '</b> blogs&rsquo; posts deleted from the global index';
+				$('#cfs_global_create_time').html(r.create_time);
+				$('#cfs_glbal_update_time').html(r.update_time);
+				$('#cfs_global_num_rows').html(r.num_rows);
+				$('#cfs_global_num_blogs').html(r.num_blogs);
+				cfs_update_status(message,true,true);
+				cfs_fade_info_display(1,true);				
+			}
+			else {
+				cfs_update_status('Failed updating global post index',false,true);
+			}
+		},'json');
+	}
+
+// local index rebuild
+	$('#cfs_rebuild_indexes_form input[type="submit"]').click(function(){
 		cfs_batch_rebuild_indexes();
 		return false;
 	});
-	
+		
 	function cfs_batch_rebuild_indexes() {
 		var batch_increment = 100;
 		cfs_fade_info_display(.3);
-		cfs_update_status('Processing posts');
+		cfs_update_status('Processing posts',false);
 		cfs_rebuild_batch(0,batch_increment);
 	}
 	
 	// recursive function to rebuild the post index in batches
 	function cfs_rebuild_batch(offset,increment) {
-		jQuery.post('index.php',{'cfs_rebuild_indexes':1,'cfs_batch_offset':offset,'cfs_batch_increment':increment},function(r){
-				if (!r.result && !r.finished) {
-					if (r.message) { 
-						msg = r.message;
-					}
-					else {
-						msg = 'Fatal Error. Please contact the system administrator.';
-					}
+		$.post('index.php',{'cfs_rebuild_indexes':1,'cfs_batch_offset':offset,'cfs_batch_increment':increment},function(r){
+			if (!r.result && !r.finished) {
+				if (r.message) { 
+					msg = r.message;
+				}
+				else {
+					msg = 'Fatal Error. Please contact the system administrator.';
+				}
 
-					cfs_update_status('<b>Post processing failed!</b> Server said: ' + msg);
-					return;
-				}
-				else if (!r.result && r.finished) {
-					cfs_update_status('Creating indexes. Almost done&hellip;');
-					setTimeout(cfs_rebuild_indexes,500); // slight pause for effect
-				}
-				else if (r.result) {
-					cfs_update_status(r.message);
-					cfs_rebuild_batch(offset+increment,increment);
-				}
-			},'json');
+				cfs_update_status('<b>Post processing failed!</b> Server said: ' + msg,false);
+				return;
+			}
+			else if (!r.result && r.finished) {
+				cfs_update_status('Creating indexes. Almost done&hellip;',false);
+				setTimeout(cfs_rebuild_indexes,500); // slight pause for effect
+			}
+			else if (r.result) {
+				cfs_update_status(r.message,false);
+				cfs_rebuild_batch(offset+increment,increment);
+			}
+		},'json');
 	}
 	
 	// make a call to rebuild the fulltext indexes on the search tables
 	function cfs_rebuild_indexes() {
 		// make call to build table index
-		jQuery.post('index.php',{cfs_rebuild_indexes:'1',cfs_create_table_index:'1'},function(response) {
-				if (response.result) {
-					jQuery('#cfs_create_time').html(response.create_time);
-					jQuery('#cfs_update_time').html(response.update_time);
-					jQuery('#cfs_num_rows').html(response.num_rows);
-					cfs_update_status('Post Indexing Complete.',true);
-					cfs_fade_info_display(1);
-				}
-				else {
-					cfs_update_status('Failed creating post table index');
-				}
-			},'json');		
-	}
-	
-	// update status message
-	function cfs_update_status(message,finished) {
-		if (finished) {
-			jQuery('#index-status').addClass('finished').children('#index-status-warning').remove();
-		}
-		else {
-			jQuery('#index-status.finished').removeClass('finished');
-			jQuery('#index-status:not(.updated)').addClass('updated').append('<p id="index-status-warning">Do not leave or refresh this page</p>');
-		}
-		jQuery('#index-status p#index-status-update').html(message);
+		$.post('index.php',{cfs_rebuild_indexes:'1',cfs_create_table_index:'1'},function(response) {
+			if (response.result) {
+				$('#cfs_create_time').html(response.create_time);
+				$('#cfs_update_time').html(response.update_time);
+				$('#cfs_num_rows').html(response.num_rows);
+				cfs_update_status('Post Indexing Complete.',true);
+				cfs_fade_info_display(1);
+			}
+			else {
+				cfs_update_status('Failed creating post table index',false);
+			}
+		},'json');		
 	}
 	
 	// change the opacity of the info display
-	function cfs_fade_info_display(amount) {
-		jQuery('#cfs-index-info').fadeTo(1000,amount);
+	function cfs_fade_info_display(amount,global) {
+		var fade_tgt = global == true ? 'cfs-global-index-info' : 'cfs-index-info'; 
+		$('#' + fade_tgt).fadeTo(1000,amount);
+	}
+	
+// update status messages
+	function cfs_update_status(message,finished,global) {
+		var msg_tgt = global == true ? 'prune-status' : 'index-status';
+		if (finished) {
+			$('#' + msg_tgt).addClass('finished').children('.index-status-warning').remove();
+		}
+		else {
+			$('#' + msg_tgt + '.finished').removeClass('finished');
+			$('#' + msg_tgt + ':not(.updated)').addClass('updated').append('<p class="index-status-warning">Do not leave or refresh this page</p>');
+		}
+		$('#' + msg_tgt + ' p.index-status-update').html(message);
 	}
 	
 });
@@ -426,6 +544,66 @@ jQuery(function() {
 	 */
 	function cfs_admin_menu_item() {
 		add_submenu_page('options-general.php','CF Advanced Search','CF Advanced Search',10,'advanced-search-admin','cfs_admin');
+	}
+	
+	/**
+	 * Prune the global posts table of posts that are from inactive, deleted or archived blogs.
+	 * Called via ajax.
+	 *
+	 * @return void
+	 */
+	function cfs_prune_global_index() {
+		global $wpdb;
+		
+		// get complete active blog list - modification of WP's get_blog_list but discards the blog_id and pulls all known blogs...
+		$query = "SELECT blog_id FROM $wpdb->blogs 
+				WHERE public = '1' 
+				AND archived = '0' 
+				AND mature = '0' 
+				AND spam = '0' 
+				AND deleted = '0' 
+				ORDER BY registered DESC";
+		$blogs = $wpdb->get_results( $query, ARRAY_A );
+		//error_log(print_r($blogs,true));
+		foreach($blogs as $blog) {
+			$where[] = 'blog_id <> '.$blog['blog_id'];
+		}
+		$where = trim(implode(' AND ',$where));
+		
+		// prune posts not in those IDs
+		$index_table = cfs_get_global_index_table();
+		$ret = $wpdb->query("DELETE LOW_PRIORITY FROM {$index_table} WHERE {$where}");
+
+		if($ret === false) {
+			echo json_encode(array('result' => false, 'message' => 'No posts deleted'));
+		}
+		else {
+			echo json_encode(array('result' => true, 'finished' => true, 'message' => 'prune successful'));
+		}
+		exit;
+	}
+	
+	/**
+	 * Rebuild just the global search index, by request only, via ajax
+	 *
+	 * @return void
+	 */
+	function cfs_rebuild_global_index() {
+		// rebuild global indices
+		if (cfs_do_global_index()) { 
+			cfs_destroy_global_indices();
+			cfs_create_global_indices();		
+		}
+		
+		$status = cfs_global_index_table_status();
+		echo json_encode(array(
+			'result' => true,
+			'message' => 'Global Index Rebuilt',
+			'create_time' => $status->Create_time,
+			'update_time' => $status->Update_time,
+			'num_rows' => $status->Rows,
+			'num_blogs' => $status->Blogs
+		));
 	}
 	
 	/**
@@ -1048,6 +1226,7 @@ jQuery(function() {
 	 */
 	function cfs_build_search_sql(&$search) {
 		global $wpdb;
+		$extras = '';
 
 		// global search toggles
 		if ($search->params['global_search'] > 0) {
@@ -1131,7 +1310,6 @@ jQuery(function() {
 		}
 
 		// build potential exclude lists
-		$excludes = '';
 		foreach(array('categories' => 'category_exclude', 'author' => 'author_exclude','tags' => 'tags_exclude') as $column => $exclude_type) {
 			if (isset($search->params[$exclude_type]) && !empty($search->params[$exclude_type])) {
 				$extras .= 'and not match('.$column.') against(\''.$search->params[$exclude_type].'\' IN BOOLEAN MODE) ';
