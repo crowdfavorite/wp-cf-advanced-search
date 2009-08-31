@@ -575,10 +575,10 @@ jQuery(function($) {
 		$ret = $wpdb->query("DELETE LOW_PRIORITY FROM {$index_table} WHERE {$where}");
 
 		if($ret === false) {
-			echo json_encode(array('result' => false, 'message' => 'No posts deleted'));
+			echo cf_json_encode(array('result' => false, 'message' => 'No posts deleted'));
 		}
 		else {
-			echo json_encode(array('result' => true, 'finished' => true, 'message' => 'prune successful'));
+			echo cf_json_encode(array('result' => true, 'finished' => true, 'message' => 'prune successful'));
 		}
 		exit;
 	}
@@ -596,7 +596,7 @@ jQuery(function($) {
 		}
 		
 		$status = cfs_global_index_table_status();
-		echo json_encode(array(
+		echo cf_json_encode(array(
 			'result' => true,
 			'message' => 'Global Index Rebuilt',
 			'create_time' => $status->Create_time,
@@ -614,7 +614,7 @@ jQuery(function($) {
 	function cfs_batch_reindex() {
 		global $wpdb;
 		if (!is_numeric($_POST['cfs_batch_increment']) || !is_numeric($_POST['cfs_batch_offset'])) {
-			echo json_encode(array('result' => false,'message' => 'invalid quantity or offset'));
+			echo cf_json_encode(array('result' => false,'message' => 'invalid quantity or offset'));
 			exit();
 		}
 		$qty = (int) $_POST['cfs_batch_increment'];
