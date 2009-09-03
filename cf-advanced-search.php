@@ -1363,7 +1363,7 @@ where (
 	and (
 		('' = %s) or (match(tags) against (%s IN BOOLEAN MODE) > 0)
 	)
-	and p.ID is not null
+    ".($search->params['global_search'] > 0 ? null : "and p.ID is not null")."
 
 ".trim($extras)."
 
