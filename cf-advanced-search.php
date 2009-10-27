@@ -1286,7 +1286,7 @@ jQuery(function($) {
 				
 			// relevance
 			default:
-				$orderby = "relevancy_categories, relevancy_tags, relevancy_title desc, relevancy_content desc, relevancy_authors desc";
+				$orderby = "relevancy_categories, relevancy_tags, relevancy_title desc, relevancy_content desc, relevancy_authors desc, post_date desc";
 				break;
 		}
 
