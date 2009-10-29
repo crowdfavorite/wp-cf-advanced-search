@@ -1346,7 +1346,7 @@ where (
 	)
     ".($search->params['global_search'] > 0 ? null : "and p.ID is not null")."
 
-".trim($extras)."
+".apply_filters('cfs-search-extras',trim($extras),$search)."
 
 order by {$orderby}
 limit %d, %d
