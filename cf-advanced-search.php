@@ -1286,7 +1286,7 @@ jQuery(function($) {
 				
 			// relevance
 			default:
-				$orderby = "relevancy_categories, relevancy_tags, relevancy_title desc, relevancy_content desc, relevancy_authors desc, post_date desc";
+				$orderby = "relevancy_categories, relevancy_tags, relevancy_title desc, relevancy_content desc, relevancy_authors desc";
 				break;
 		}
 
@@ -1346,7 +1346,7 @@ where (
 	)
     ".($search->params['global_search'] > 0 ? null : "and p.ID is not null")."
 
-".apply_filters('cfs-search-extras',trim($extras),$search)."
+".apply_filters('cfs-search-extras', trim($extras), $search)."
 
 order by {$orderby}
 limit %d, %d
