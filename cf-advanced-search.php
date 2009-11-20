@@ -25,7 +25,6 @@ Author URI: http://crowdfavorite.com
 	 */
 	define('CFS_SEARCH_VERSION',1.0);
 	
-	
 // ACTIVATION
 
 	load_plugin_textdomain('agora-financial');
@@ -89,7 +88,7 @@ Author URI: http://crowdfavorite.com
 			exit();
 		}
 	
-		if (function_exists('is_admin_page') && is_admin_page() && strtolower($_SERVER['REQUEST_METHOD']) == 'post') {
+		if (function_exists('is_admin') && is_admin() && strtolower($_SERVER['REQUEST_METHOD']) == 'post') {
 			// rebuild database indexes
 			// if (isset($_POST['cfs_rebuild_indexes']) && isset($_POST['cfs_batch_offset'])) {
 			// 	cfs_batch_reindex();
