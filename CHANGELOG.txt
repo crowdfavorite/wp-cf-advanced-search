@@ -1,0 +1,8 @@
+# 1.0.1
+
+- removed obsolete WordPress function call
+
+# 1.0
+
+- initial release
+- and then some
