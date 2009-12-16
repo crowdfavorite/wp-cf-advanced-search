@@ -204,6 +204,7 @@ Author URI: http://crowdfavorite.com
 	 */
 	function cfs_posts_permalink_action($permalink,$post) {
 		if (is_search() && isset($post->blog_id) && !isset($post->post_global_permalink)) {
+			remove_action('post_link','cfs_posts_permalink_action',10,2);
 			$post->post_global_permalink = '';
 			$key = $post->blog_id.'-'.$post->ID.'-permalink';
 			$permalink = wp_cache_get($key,'global-post-permalinks');
@@ -212,6 +213,7 @@ Author URI: http://crowdfavorite.com
 				wp_cache_add($key,$permalink,'global-post-permalinks');
 			}
 			$post->post_global_permalink = $permalink;
+			add_action('post_link','cfs_posts_permalink_action',10,2);
 		}
 		return $permalink;
 	}
