@@ -55,7 +55,11 @@ The initial search index must be built manually. Automated processes can cause t
 
 Log in to the WordPress admin go to the search indexes page under "Settings" > "Advanced Search". Here you will see the state of the search indexes. Click "Rebuild Indexes" to do the initial build. Do not leave the page until the in-page update notification box turns green and indicates that indexing is complete.
 
-After the initial build it should not be necessary to manually manage the search indexes. Adding, deleting and editing posts through the WordPress admin automatically manage the search index entries for those posts and pages. It should only be necessary to update the search indexes if posts and/or pages have been updated programatically and that don't call the built in WordPress save/edit routines.
+After the initial build it should not be necessary to manually manage the search indexes. Adding, deleting and editing posts through the WordPress admin automatically manage the search index entries for those posts and pages. It should only be necessary to update the search indexes if posts and/or pages have been updated programmatically and that don't call the built in WordPress save/edit routines.
+
+#### Excluding posts from the search index
+
+The filter `cfs_post_pre_index` is available to remove specific posts from the search indexing.  The filter passes in the `postdata` as a parameter.  If `false` is returned from the filter, the post will not be processed into the search index.
 
 
 ---
