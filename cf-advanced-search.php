@@ -3,7 +3,7 @@
 Plugin Name: CF Advanced Search
 Plugin URI: http://crowdfavorite.com
 Description: Advanced search functionality greater than the built in wordpress search
-Version: 1.0.1
+Version: 1.0.2
 Author: Crowd Favorite
 Author URI: http://crowdfavorite.com
 */
