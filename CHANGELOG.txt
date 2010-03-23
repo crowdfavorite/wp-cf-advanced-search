@@ -3,6 +3,7 @@
 ## 1.0.2
 
 - Tagging for release
+- Bug Fix on Permalink action to remove circle redirects
 
 ## 1.0.1
 - removed obsolete WordPress function call
