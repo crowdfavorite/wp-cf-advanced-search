@@ -246,6 +246,7 @@ Author URI: http://crowdfavorite.com
 				$params = cfs_search_params();
 				$query_vars['s'] = ' ';
 			}
+			$query_vars['s'] = wp_kses_data($query_vars['s']);
 			$query_vars['advanced-search'] = 1;
 		}
 		return $query_vars;
