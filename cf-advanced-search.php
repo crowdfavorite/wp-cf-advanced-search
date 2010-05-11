@@ -241,12 +241,14 @@ Author URI: http://crowdfavorite.com
 	 * Search needs SOMETHING to trigger it, so if s is empty then give it at minimum an empty string
 	 */
 	function cfs_parse_query($query_vars) {
+		global $wpdb;
 		if (isset($_GET['s'])) {
 			if (empty($_GET['s'])) {
 				$params = cfs_search_params();
 				$query_vars['s'] = ' ';
 			}
-			$query_vars['s'] = wp_kses_data($query_vars['s']);
+			$query_vars['s'] = $wpdb->prepare($query_vars['s']);
+			$_GET['s'] = htmlentities($_GET['s']);
 			$query_vars['advanced-search'] = 1;
 		}
 		return $query_vars;
