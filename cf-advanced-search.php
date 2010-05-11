@@ -1535,6 +1535,17 @@ limit %d, %d
 		return $html;		
 	}
 	
+	function cfs_search_title_link() {
+		$s = get_query_var('s');
+		if (get_option('permalink_structure') != '') {
+			$search_title = '<a href="'.esc_attr(trailingslashit(get_bloginfo('url')).'search/'.urlencode($s)).'">'.esc_html($s).'</a>';
+		}
+		else {
+			$search_title = '<a href="'.esc_attr(trailingslashit(get_bloginfo('url')).'?s='.urlencode($s)).'">'.esc_html($s).'</a>';
+		}
+		return $search_title = apply_filters('cfs-search-title-link',$search_title);
+	}
+	
 // Readme
 
 	add_action('admin_init','cfs_add_readme');
