@@ -1323,14 +1323,14 @@ jQuery(function($) {
 
 		$search->sql = trim("	
 select SQL_CALC_FOUND_ROWS
-	{$fields}
+	".apply_filters('cfs-search-fields', $fields)."
 	match(categories) against (%s IN BOOLEAN MODE) as relevancy_categories,
 	match(tags) against (%s IN BOOLEAN MODE) as relevancy_tags,
 	match(title) against (%s IN BOOLEAN MODE) as relevancy_title,
 	match(excerpt,content) against (%s IN BOOLEAN MODE) as relevancy_content,
 	match(author) against (%s IN BOOLEAN MODE) as relevancy_authors
 
-{$from}
+".apply_filters('cfs-search-from', $from)."
 
 where (
 		match(categories) against (%s IN BOOLEAN MODE) or
@@ -1352,7 +1352,7 @@ where (
 
 ".apply_filters('cfs-search-extras', trim($extras), $search)."
 
-order by {$orderby}
+order by ".apply_filters('cfs-search-order', $orderby)."
 limit %d, %d
 		");
 		// drop in the real values for argument array
