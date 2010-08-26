@@ -1,5 +1,9 @@
 # CF Advanced Search Changelog
 
+## 1.0.3
+
+- Excluding future posts from being indexed, so they don't show up in the search until they are published
+
 ## 1.0.2
 
 - Tagging for release

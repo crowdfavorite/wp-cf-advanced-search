@@ -3,7 +3,7 @@
 Plugin Name: CF Advanced Search
 Plugin URI: http://crowdfavorite.com
 Description: Advanced search functionality greater than the built in wordpress search
-Version: 1.0.2
+Version: 1.0.3
 Author: Crowd Favorite
 Author URI: http://crowdfavorite.com
 */
@@ -937,7 +937,7 @@ jQuery(function($) {
 	
 		// don't do anything on drafts or revisions
 		//if ($post->post_type == 'revision' || $post->post_status == 'draft' || $post->post_parent != 0) { // post parent check is eliminating sub-pages
-		if ($post->post_type == 'revision' || $post->post_status == 'draft') {
+		if ($post->post_type == 'revision' || $post->post_status == 'draft' || $post->post_status == 'future') {
 			dbg('cfs_index_post','error: post is a draft or revision');
 			return;
 		}
