@@ -3,7 +3,7 @@
 Plugin Name: CF Advanced Search
 Plugin URI: http://crowdfavorite.com
 Description: Advanced search functionality greater than the built in wordpress search
-Version: 1.0.3
+Version: 1.0.4
 Author: Crowd Favorite
 Author URI: http://crowdfavorite.com
 */
@@ -932,6 +932,12 @@ jQuery(function($) {
 		// make sure we have an ID
 		if (!$post->ID) {
 			dbg('cfs_index_post', 'error: missing post ID');
+			return;
+		}
+		
+		$post_type_obj = get_post_type_object($post->post_type);
+		if (!post_type_obj->exclude_from_search) {
+			dbg('cfs_index_post', 'error: post type does not support search');
 			return;
 		}
 	
