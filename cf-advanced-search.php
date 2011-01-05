@@ -611,6 +611,7 @@ jQuery(function($) {
 			cfs_create_index_table();
 			cfs_destroy_global_indices();
 			cfs_clear_from_global_index_table();
+			cfs_upgrade_104();
 		}
 
 		$r = cfs_index_batch_posts($qty,$offset);
@@ -686,6 +687,7 @@ jQuery(function($) {
 	function cfs_initialize_database() {
 		// handle this blog
 		cfs_create_index_table();
+		cfs_upgrade_104();
 		//cfs_destroy_indices();
 		cfs_create_indices();
 		
@@ -722,7 +724,7 @@ jQuery(function($) {
 	function &cfs_get_posts($qty=false,$offset=false) {
 		global $wpdb;
 		$index_table = cfs_get_index_table();
-		$sql = "select * from {$wpdb->posts} where post_status = 'publish' and post_parent = 0 and post_type = 'post'";
+		$sql = "select * from {$wpdb->posts} where post_status = 'publish' and post_parent = 0";//and post_type = 'post'";
 		if ($qty !== false && $offset !== false) {
 			$sql .= " LIMIT {$offset}, {$qty}";
 		}
@@ -936,6 +938,7 @@ jQuery(function($) {
 		}
 		
 		$post_type_obj = get_post_type_object($post->post_type);
+		error_log('post_type_obj '.$post_type_obj->name);
 		if ($post_type_obj->exclude_from_search) {
 			dbg('cfs_index_post', 'error: post type does not support search');
 			return;
@@ -953,6 +956,8 @@ jQuery(function($) {
 		$postdata['post_title'] = trim(strip_tags($post->post_title));
 		$postdata['post_excerpt'] = trim(strip_tags($post->post_excerpt));
 		$postdata['post_content'] = trim(strip_tags($post->post_content));				
+		$postdata['post_type'] = trim(strip_tags($post->post_type));				
+		
 		
 		// all categories belonging to this post, apply a filter for accessibility later on
 		$postCats = wp_get_post_categories($post->ID, array('fields' => 'all'));
@@ -972,7 +977,7 @@ jQuery(function($) {
 		else {
 			$postdata['author'] = (!empty($authordata->user_nicename) ? $authordata->user_nicename : $authordata->user_login);
 		}
-
+		
 		// apply filter to post data before indexing
 		$postdata = apply_filters('cfs_post_pre_index',$postdata);
 		// interpret false post data as 'do not index'
@@ -984,8 +989,8 @@ jQuery(function($) {
 		$index_table = cfs_get_index_table();
 		global $wpdb;
 		$sql = trim("
-			replace into {$index_table} (post_id, categories, tags, author, title, excerpt, content) 
-			values (%d, %s, %s, %s, %s, %s, %s)"
+			replace into {$index_table} (post_id, categories, tags, author, title, excerpt, content, type) 
+			values (%d, %s, %s, %s, %s, %s, %s, %s)"
 		);
 		$qry = $wpdb->prepare($sql,
 			$postdata['ID'],
@@ -994,7 +999,8 @@ jQuery(function($) {
 			$postdata['author'],
 			$postdata['post_title'],
 			$postdata['post_excerpt'],
-			$postdata['post_content']
+			$postdata['post_content'],
+			$postdata['post_type']
 		);
 		$wpdb->query($qry);
 		
@@ -1030,7 +1036,7 @@ jQuery(function($) {
 				$postdata['post_excerpt'],
 				$postdata['post_content']
 			);
-			$wpdb->query($global_qry);			
+			$wpdb->query($global_qry);
 		}
 	}
 	
@@ -1114,6 +1120,7 @@ jQuery(function($) {
 			'author_exclude' => '',
 			'category_exclude' => '',
 			'tag_exclude' => '',
+			'type_exclude' => '',
 			'global_search' => 0,
 			'keyword_comparison' => 'or'
 		);
@@ -1237,6 +1244,7 @@ jQuery(function($) {
 					tags,
 					author,
 					blog_id,
+					type,
 				';
 			$from = "
 				from {$index_table}
@@ -1301,7 +1309,7 @@ jQuery(function($) {
 		}
 
 		// build potential exclude lists
-		foreach(array('categories' => 'category_exclude', 'author' => 'author_exclude','tags' => 'tags_exclude') as $column => $exclude_type) {
+		foreach(array('categories' => 'category_exclude', 'author' => 'author_exclude','tags' => 'tag_exclude', 'type' => 'type_exclude') as $column => $exclude_type) {
 			if (isset($search->params[$exclude_type]) && !empty($search->params[$exclude_type])) {
 				$extras .= 'and not match('.$column.') against(\''.$search->params[$exclude_type].'\' IN BOOLEAN MODE) ';
 			}
@@ -1579,5 +1587,14 @@ limit %d, %d
 			return $markdown;
 		}
 		return null;
+	}
+	
+	function cfs_upgrade_104() {
+		global $wpdb;
+		$index_table = cfs_get_index_table();
+		$wpdb->query("
+			ALTER TABLE {$index_table} 
+			ADD `type` VARCHAR(255) DEFAULT 'post'
+		");
 	}
 ?>
