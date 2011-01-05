@@ -938,7 +938,6 @@ jQuery(function($) {
 		}
 		
 		$post_type_obj = get_post_type_object($post->post_type);
-		error_log('post_type_obj '.$post_type_obj->name);
 		if ($post_type_obj->exclude_from_search) {
 			dbg('cfs_index_post', 'error: post type does not support search');
 			return;
