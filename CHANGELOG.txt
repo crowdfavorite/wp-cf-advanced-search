@@ -1,5 +1,11 @@
 # CF Advanced Search Changelog
 
+## 1.0.4
+
+- Adding custom post type searchable check
+- Adding support for post type exclusion
+
+
 ## 1.0.3
 
 - Excluding future posts from being indexed, so they don't show up in the search until they are published
