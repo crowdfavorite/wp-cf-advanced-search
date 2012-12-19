@@ -23,7 +23,7 @@ Author URI: http://crowdfavorite.com
 	/**
 	 * Development Version
 	 */
-	define('CFS_SEARCH_VERSION','1.0.1');
+	define('CFS_SEARCH_VERSION','1.0.4');
 	
 // ACTIVATION
 
