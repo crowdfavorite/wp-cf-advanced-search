@@ -1498,7 +1498,6 @@ limit %d, %d
 	
 	function cfs_get_sort_options() {
 		$sortOptions = array(
-			'relevance' => 'Sort by relevance',
 			'date' => 'Sort by date'
 		);
 		return $sortOptions;
