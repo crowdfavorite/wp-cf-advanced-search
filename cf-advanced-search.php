@@ -1223,7 +1223,11 @@ jQuery(function($) {
 	 */
 	function cfs_build_search_sql(&$search) {
 		global $wpdb;
-		$extras = '';
+		$post_types = get_post_types(array('public' => true));
+		foreach ($post_types as &$type) {
+			$type = $wpdb->prepare('%s', $type);
+		}
+		$extras = 'AND post_type IN ('.implode(',', $post_types).') ';
 
 		// global search toggles
 		if ($search->params['global_search'] > 0) {
@@ -1298,12 +1302,8 @@ jQuery(function($) {
 		
 			// date
 			case 'date':
-				$orderby = "post_date desc";
-				break;
-				
-			// relevance
 			default:
-				$orderby = "relevancy_categories, relevancy_tags, relevancy_title desc, relevancy_content desc, relevancy_authors desc";
+				$orderby = "post_date desc";
 				break;
 		}
 
