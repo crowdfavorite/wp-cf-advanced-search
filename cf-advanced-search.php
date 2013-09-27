@@ -1303,7 +1303,7 @@ jQuery(function($) {
 				
 			// relevance
 			default:
-				$orderby = "relevancy_categories, relevancy_tags, relevancy_title desc, relevancy_content desc, relevancy_authors desc";
+				$orderby = "relevancy_categories, relevancy_tags, relevancy_title desc, relevancy_content desc, relevancy_authors desc, p.post_date desc";
 				break;
 		}
 
@@ -1353,7 +1353,7 @@ where (
 		match(author) against (%s IN BOOLEAN MODE)
 	)
 	and (
-		('' = %s) or (match(categories) against (%s IN BOOLEAN MODE) > 0)
+		('' = %s) or categories LIKE %s
 	)
 	and (
 		('' = %s) or (match(author) against (%s IN BOOLEAN MODE) > 0)
