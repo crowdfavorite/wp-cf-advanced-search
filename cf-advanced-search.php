@@ -134,7 +134,7 @@ Author URI: http://crowdfavorite.com
 	function cfs_posts_request_action($post_query) {
 		global $wp_the_query,$search;
 		if (is_search() && isset($wp_the_query->query_vars['advanced-search']) && $wp_the_query->query_vars['advanced-search'] == 1) {
-			$options = cfs_search_params();			
+			$options = cfs_search_params();
 			$post_query = cfs_execute_search($options,true);
 		}
 		return $post_query;
@@ -1310,7 +1310,14 @@ jQuery(function($) {
 		// build potential exclude lists
 		foreach(array('categories' => 'category_exclude', 'author' => 'author_exclude','tags' => 'tag_exclude', 'type' => 'type_exclude') as $column => $exclude_type) {
 			if (isset($search->params[$exclude_type]) && !empty($search->params[$exclude_type])) {
-				$extras .= 'and not match('.$column.') against(\''.$search->params[$exclude_type].'\' IN BOOLEAN MODE) ';
+				if (!is_array($search->params[$exclude_type])) {
+					$extras .= 'and not match('.$column.') against(\''.$search->params[$exclude_type].'\' IN BOOLEAN MODE) ';
+				}
+				else {
+					foreach ($search->params[$exclude_type] as $exclude) {
+						$extras .= $wpdb->prepare('and not match('.$column.') against (%s IN BOOLEAN MODE) ', $exclude);
+					}
+				}
 			}
 		}
 
@@ -1381,6 +1388,8 @@ limit %d, %d
 
 		// build sql
 		$search->sql_processed = call_user_func_array(array($wpdb,'prepare'),$args);
+		
+		die(print_r($search->sql_processed, true));
 
 	}
 	
