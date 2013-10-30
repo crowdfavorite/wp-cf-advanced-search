@@ -1388,8 +1388,6 @@ limit %d, %d
 
 		// build sql
 		$search->sql_processed = call_user_func_array(array($wpdb,'prepare'),$args);
-		
-		die(print_r($search->sql_processed, true));
 
 	}
 	
