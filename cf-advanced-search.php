@@ -134,7 +134,7 @@ Author URI: http://crowdfavorite.com
 	function cfs_posts_request_action($post_query) {
 		global $wp_the_query,$search;
 		if (is_search() && isset($wp_the_query->query_vars['advanced-search']) && $wp_the_query->query_vars['advanced-search'] == 1) {
-			$options = cfs_search_params();			
+			$options = cfs_search_params();
 			$post_query = cfs_execute_search($options,true);
 		}
 		return $post_query;
@@ -528,7 +528,7 @@ jQuery(function($) {
 	 * Run at admin_menu action
 	 */
 	function cfs_admin_menu_item() {
-		add_submenu_page('options-general.php','CF Advanced Search','CF Advanced Search',10,'advanced-search-admin','cfs_admin');
+		add_submenu_page('options-general.php','CF Advanced Search','CF Advanced Search','administrator','advanced-search-admin','cfs_admin');
 	}
 	
 	/**
@@ -1303,14 +1303,21 @@ jQuery(function($) {
 				
 			// relevance
 			default:
-				$orderby = "relevancy_categories, relevancy_tags, relevancy_title desc, relevancy_content desc, relevancy_authors desc";
+				$orderby = "relevancy_categories, relevancy_tags, relevancy_title desc, relevancy_content desc, relevancy_authors desc, p.post_date desc";
 				break;
 		}
 
 		// build potential exclude lists
 		foreach(array('categories' => 'category_exclude', 'author' => 'author_exclude','tags' => 'tag_exclude', 'type' => 'type_exclude') as $column => $exclude_type) {
 			if (isset($search->params[$exclude_type]) && !empty($search->params[$exclude_type])) {
-				$extras .= 'and not match('.$column.') against(\''.$search->params[$exclude_type].'\' IN BOOLEAN MODE) ';
+				if (!is_array($search->params[$exclude_type])) {
+					$extras .= 'and not match('.$column.') against(\''.$search->params[$exclude_type].'\' IN BOOLEAN MODE) ';
+				}
+				else {
+					foreach ($search->params[$exclude_type] as $exclude) {
+						$extras .= $wpdb->prepare('and not match('.$column.') against (%s IN BOOLEAN MODE) ', $exclude);
+					}
+				}
 			}
 		}
 
@@ -1353,7 +1360,7 @@ where (
 		match(author) against (%s IN BOOLEAN MODE)
 	)
 	and (
-		('' = %s) or (match(categories) against (%s IN BOOLEAN MODE) > 0)
+		('' = %s) or categories LIKE %s
 	)
 	and (
 		('' = %s) or (match(author) against (%s IN BOOLEAN MODE) > 0)
