@@ -528,7 +528,7 @@ jQuery(function($) {
 	 * Run at admin_menu action
 	 */
 	function cfs_admin_menu_item() {
-		add_submenu_page('options-general.php','CF Advanced Search','CF Advanced Search',10,'advanced-search-admin','cfs_admin');
+		add_submenu_page('options-general.php','CF Advanced Search','CF Advanced Search','administrator','advanced-search-admin','cfs_admin');
 	}
 	
 	/**
