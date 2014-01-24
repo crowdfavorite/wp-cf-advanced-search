@@ -1010,7 +1010,7 @@ jQuery(function($) {
 													"post_name, post_modified, post_modified_gmt, post_content_filtered, post_parent, guid, post_type, blog_id, title, excerpt, content) 
 				values (%d, %s, %s, %s, %s, %s, %s, %s, %s, %d, %d, %s, %s, %s, %s, %s, %d, %s, %s, %d, %s, %s, %s)"
 			);
-			$global_qry = $wpdb->prepare($global_sql,
+			$query_args = array(
 				$postdata['ID'],
 				implode(' ', $postdata['cats']),
 				implode(' ', $postdata['tags']),
@@ -1021,7 +1021,7 @@ jQuery(function($) {
 				$post->post_date,
 				$post->post_date_gmt,
 				$post->post_author,
-				$post->post_category,
+				!empty($post->post_category) ? $post->post_category[0] : 0,
 				$post->post_password,
 				$post->post_name,
 				$post->post_modified,
@@ -1035,6 +1035,7 @@ jQuery(function($) {
 				$postdata['post_excerpt'],
 				$postdata['post_content']
 			);
+			$global_qry = $wpdb->prepare($global_sql, $query_args);
 			$wpdb->query($global_qry);
 		}
 	}
